@@ -69,7 +69,7 @@ node vscode/scripts/package-vsix.js --no-rdkit   # dist/msentity-spectrum-viewer
 ```
 
 `--backend` selects the backend executable and `--target` its platform
-(`linux-x64`, `win32-x64`, `darwin-arm64`). Packages for distribution need a
+(`linux-x64`, `win32-x64`). Packages for distribution need a
 backend built with `-DMSENTITY_STATIC_DEPS=ON` and vcpkg, so that it does not
 depend on Arrow/Parquet/HDF5 libraries on the user's machine;
 `.github/workflows/release.yml` builds them for every platform, and

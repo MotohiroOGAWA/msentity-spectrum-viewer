@@ -1,6 +1,6 @@
 # Release build of the VS Code extension: a self-contained backend for Linux
-# x64, Windows x64, and macOS arm64 (Arrow, Parquet, HDF5 and the C++ runtime
-# linked statically via vcpkg), packaged with and without RDKit, and
+# x64 and Windows x64 (Arrow, Parquet, HDF5 and the C++ runtime linked
+# statically via vcpkg), packaged with and without RDKit, and
 # published as a GitHub Release for tags v<major>.<minor>.<patch>.
 #
 # Tags are created by `npm run release` (scripts/release.js). A tag whose
@@ -29,17 +29,10 @@ jobs:
             target: linux-x64
             triplet: x64-linux
             backend: build/backend/msentity-viewer-backend
-            cmake_args: ""
           - os: windows-2022
             target: win32-x64
             triplet: x64-windows-static
             backend: build/backend/Release/msentity-viewer-backend.exe
-            cmake_args: ""
-          - os: macos-14
-            target: darwin-arm64
-            triplet: arm64-osx-viewer
-            backend: build/backend/msentity-viewer-backend
-            cmake_args: -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0 -DCMAKE_OSX_ARCHITECTURES=arm64
     defaults:
       run:
         shell: bash
@@ -74,28 +67,19 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: .vcpkg-cache
-          key: vcpkg-${{ matrix.triplet }}-${{ hashFiles('vcpkg.json', 'triplets/**') }}
+          key: vcpkg-${{ matrix.triplet }}-${{ hashFiles('vcpkg.json') }}
           restore-keys: vcpkg-${{ matrix.triplet }}-
 
       - name: Build tools for vcpkg ports (Linux)
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y autoconf automake autoconf-archive libtool pkg-config bison flex
 
-      - name: Build tools for vcpkg ports (macOS; Thrift needs bison > 2.5, Xcode ships 2.3)
-        if: runner.os == 'macOS'
-        run: |
-          brew install bison flex
-          echo "$(brew --prefix bison)/bin" >> "$GITHUB_PATH"
-          echo "$(brew --prefix flex)/bin" >> "$GITHUB_PATH"
-
       - name: Configure (builds Arrow, Parquet, HDF5 with vcpkg on the first run)
         run: >
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
           -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
           -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }}
-          -DVCPKG_OVERLAY_TRIPLETS="$GITHUB_WORKSPACE/triplets"
           -DMSENTITY_STATIC_DEPS=ON
-          ${{ matrix.cmake_args }}
 
       # Saved even if a later step fails, so dependencies are built only once.
       - name: Save built dependencies
@@ -103,7 +87,7 @@ jobs:
         uses: actions/cache/save@v6
         with:
           path: .vcpkg-cache
-          key: vcpkg-${{ matrix.triplet }}-${{ hashFiles('vcpkg.json', 'triplets/**') }}
+          key: vcpkg-${{ matrix.triplet }}-${{ hashFiles('vcpkg.json') }}
 
       - name: Build the backend
         run: cmake --build build --config Release --parallel --target msentity-viewer-backend
@@ -112,7 +96,6 @@ jobs:
         run: |
           case "$RUNNER_OS" in
             Linux) ldd "${{ matrix.backend }}" ;;
-            macOS) otool -L "${{ matrix.backend }}" ;;
             Windows) ls -la "${{ matrix.backend }}" ;;
           esac
 

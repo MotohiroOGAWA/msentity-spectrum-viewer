@@ -34,8 +34,8 @@ code --install-extension msentity-spectrum-viewer-<version>-<platform>.vsix
 ```
 
 or use **Extensions → Views and More Actions (...) → Install from VSIX...**.
-Each package contains the viewer backend for one platform
-(`linux-x64`, `win32-x64`, `darwin-arm64`).
+Each package contains the viewer backend for one platform: Linux x64
+(`linux-x64`) or Windows x64 (`win32-x64`). macOS is not supported.
 
 Two variants are published for each platform; install one of them:
 
@@ -265,7 +265,7 @@ Any dataset, including the first one opened, can be removed from the viewer. Rem
 
 Adding the same file again creates an independent dataset loaded from its current on-disk contents. In-memory edits to an existing dataset are preserved. Datasets with matching filenames receive unique display names such as `sample (1).msp` and `sample (2).msp`, including files from different directories. These names also appear in spectrum views and similarity selection.
 
-The toolbar provides **Reload**, **Filter**, and **Export** directly. **More ...** contains Metadata, Columns, Assign SpecID, and Calculate similarity. Press **Ctrl+S** (or **Cmd+S** on macOS) while the Dataset Viewer is focused to open the same Export flow.
+The toolbar provides **Reload**, **Filter**, and **Export** directly. **More ...** contains Metadata, Columns, Assign SpecID, and Calculate similarity. Press **Ctrl+S** while the Dataset Viewer is focused to open the same Export flow.
 
 Logs of the backend: **MS Entity: Show Spectrum Viewer Logs**.
 <!-- rdkit:start -->

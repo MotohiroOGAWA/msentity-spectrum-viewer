@@ -166,7 +166,7 @@ if (flags.has("--no-wait")) {
 }
 
 // ---- wait for the workflow --------------------------------------------------------------
-step("Waiting for the release workflow (builds on Linux, Windows, and macOS)");
+step("Waiting for the release workflow (builds on Linux and Windows)");
 let runId = "";
 for (let attempt = 0; attempt < 30 && !runId; attempt++) {
   runId = run("gh", ["run", "list", "--repo", slug, "--workflow", "release.yml", "--branch", tag,

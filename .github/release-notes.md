@@ -10,7 +10,6 @@ Download the VSIX for your platform and install it with
 |---|---|---|
 | Linux x64 | `msentity-spectrum-viewer-@VERSION@-linux-x64.vsix` | `msentity-spectrum-viewer-no-rdkit-@VERSION@-linux-x64.vsix` |
 | Windows x64 | `msentity-spectrum-viewer-@VERSION@-win32-x64.vsix` | `msentity-spectrum-viewer-no-rdkit-@VERSION@-win32-x64.vsix` |
-| macOS (Apple Silicon) | `msentity-spectrum-viewer-@VERSION@-darwin-arm64.vsix` | `msentity-spectrum-viewer-no-rdkit-@VERSION@-darwin-arm64.vsix` |
 
 The standard package includes RDKit (SMARTS filters, structure previews,
 structure counts). The package without RDKit is smaller and has everything
