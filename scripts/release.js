@@ -167,10 +167,14 @@ if (flags.has("--no-wait")) {
 
 // ---- wait for the workflow --------------------------------------------------------------
 step("Waiting for the release workflow (builds on Linux and Windows)");
+// The run of this tag's commit (an earlier, cancelled run of a re-created tag
+// has the same branch name but another commit).
+const commit = git("rev-parse", `${tag}^{commit}`);
 let runId = "";
 for (let attempt = 0; attempt < 30 && !runId; attempt++) {
   runId = run("gh", ["run", "list", "--repo", slug, "--workflow", "release.yml", "--branch", tag,
-    "--limit", "1", "--json", "databaseId", "--jq", ".[0].databaseId"], { allowFailure: true });
+    "--limit", "20", "--json", "databaseId,headSha",
+    "--jq", `[.[] | select(.headSha == "${commit}")][0].databaseId // empty`], { allowFailure: true });
   if (!runId) spawnSync(process.execPath, ["-e", "setTimeout(() => {}, 5000)"]);
 }
 if (!runId) fail(`the workflow did not start; see https://github.com/${slug}/actions`);
