@@ -62,20 +62,18 @@ variable `MSENTITY_VIEWER_BACKEND` selects another backend.
 ## Packaging
 
 ```console
-cmake -S . -B build-release -G Ninja -DMSENTITY_STATIC_DEPS=ON -DCMAKE_TOOLCHAIN_FILE=<vcpkg>/scripts/buildsystems/vcpkg.cmake
-cmake --build build-release
-(cd host && npm install)                         # RDKit, bundled into the package
-cd vscode && npm install
-node scripts/package-vsix.js --backend ../build-release/backend/msentity-viewer-backend
+(cd host && npm install)                         # RDKit, bundled into the standard package
+(cd vscode && npm ci)                            # vsce
+node vscode/scripts/package-vsix.js              # dist/msentity-spectrum-viewer-<version>-<platform>.vsix
+node vscode/scripts/package-vsix.js --no-rdkit   # dist/msentity-spectrum-viewer-no-rdkit-<version>-<platform>.vsix
 ```
 
-This writes `dist/msentity-spectrum-viewer-<version>-<platform>.vsix` with the
-backend for the current platform (`--target` names another, for example
-`win32-x64`, when `--backend` is a backend built for it). A release backend
-must be built with `MSENTITY_STATIC_DEPS=ON` so that it does not depend on
-Arrow/Parquet/HDF5 libraries installed on the user's machine; msentity's
-`.github/workflows/release.yml` shows how to build them with vcpkg on Linux,
-Windows, and macOS.
+`--backend` selects the backend executable and `--target` its platform
+(`linux-x64`, `win32-x64`, `darwin-arm64`). Packages for distribution need a
+backend built with `-DMSENTITY_STATIC_DEPS=ON` and vcpkg, so that it does not
+depend on Arrow/Parquet/HDF5 libraries on the user's machine;
+`.github/workflows/release.yml` builds them for every platform, and
+`npm run release` (`scripts/release.js`) starts a release.
 
 ## Updating msentity and msentity-similarity
 

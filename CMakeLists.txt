@@ -6,7 +6,7 @@ cmake_minimum_required(VERSION 3.21)
 #   msentity::msentity     (external/msentity)
 #   msentity::similarity   (external/msentity-similarity)
 project(msentity_spectrum_viewer
-  VERSION 2.0.0
+  VERSION 1.0.0
   DESCRIPTION "msentity spectrum viewer: UI, backend, and msentity libraries"
   LANGUAGES CXX)
 
@@ -26,6 +26,11 @@ option(MSENTITY_STATIC_DEPS
 
 if(MSVC)
   add_compile_options(/utf-8)
+  # A self-contained backend links the C++ runtime statically as well
+  # (vcpkg triplet x64-windows-static).
+  if(MSENTITY_STATIC_DEPS AND NOT DEFINED CMAKE_MSVC_RUNTIME_LIBRARY)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+  endif()
 endif()
 
 # ---- msentity and msentity-similarity (Git submodules) ---------------------------------

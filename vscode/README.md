@@ -14,7 +14,9 @@ inside the extension, so nothing else needs to be installed.
 - Assign sequential SpecID values with an optional prefix
 - MSP/MGF loading progress with bytes, percentage, and spectrum count
 - Export to MSDS, MSP, MGF, TSV, or CSV using the visible columns and current filters/sort order
+<!-- rdkit:start -->
 - SMARTS substructure filtering, 2D structure previews, and structure counts (RDKit, included)
+<!-- rdkit:end -->
 - Multiple datasets in one viewer; drag and drop files to add them
 - Mirrored two-spectrum comparison with dot product, reverse dot product, modified dot product, and BONANZA scores
 - Library search and key matching saved as `.mssim`, with a dedicated result viewer (histogram, box plot, statistics, filters)
@@ -23,7 +25,9 @@ inside the extension, so nothing else needs to be installed.
 
 ## Install
 
-Install the VSIX for your platform:
+Download the VSIX for your platform from the
+[Releases](https://github.com/MotohiroOGAWA/msentity-spectrum-viewer/releases)
+page and install it:
 
 ```console
 code --install-extension msentity-spectrum-viewer-<version>-<platform>.vsix
@@ -33,6 +37,14 @@ or use **Extensions → Views and More Actions (...) → Install from VSIX...**.
 Each package contains the viewer backend for one platform
 (`linux-x64`, `win32-x64`, `darwin-arm64`).
 
+Two variants are published for each platform; install one of them:
+
+| File | Contents |
+|---|---|
+| `msentity-spectrum-viewer-<version>-<platform>.vsix` | everything, including the chemistry features (RDKit) |
+| `msentity-spectrum-viewer-no-rdkit-<version>-<platform>.vsix` | the same without RDKit (smaller; no SMARTS filters or structure previews) |
+
+<!-- rdkit:start -->
 ## Chemistry features (RDKit)
 
 SMARTS substructure filters, 2D structure previews, and SMILES/structure
@@ -47,6 +59,14 @@ column names are used as fallbacks; without any of them the Structure column
 is not shown. After changing the setting, use **Reload** in the Viewer. The
 Structure column can be hidden, and the rendered SVG width and height can be
 adjusted in the settings (**More ... → Settings**).
+<!-- rdkit:end -->
+<!-- no-rdkit:start -->
+## Chemistry features
+
+This package does not include RDKit, so SMARTS substructure filters, structure
+previews, and structure counts are not available. Install the package without
+`no-rdkit` in its name to use them.
+<!-- no-rdkit:end -->
 
 ## Usage
 
@@ -226,8 +246,10 @@ discards assignments that have not been exported.
 - `msentitySpectrumViewer.pageSize`: spectra per metadata page (default: `20`).
 - `msentitySpectrumViewer.spectrumFloatingWindow`: use a separate floating
   window for the spectrum (default: `true`).
+<!-- rdkit:start -->
 - `msentitySpectrumViewer.structureSmilesColumn`, `showStructureColumn`,
   `structurePreviewWidth`, `structurePreviewHeight`: structure previews.
+<!-- rdkit:end -->
 - `msentitySpectrumViewer.backendPath`: use another `msentity-viewer-backend`
   executable (development builds).
 
@@ -245,6 +267,8 @@ Adding the same file again creates an independent dataset loaded from its curren
 
 The toolbar provides **Reload**, **Filter**, and **Export** directly. **More ...** contains Metadata, Columns, Assign SpecID, and Calculate similarity. Press **Ctrl+S** (or **Cmd+S** on macOS) while the Dataset Viewer is focused to open the same Export flow.
 
-Logs of the backend and RDKit: **MS Entity: Show Spectrum Viewer Logs**.
+Logs of the backend: **MS Entity: Show Spectrum Viewer Logs**.
+<!-- rdkit:start -->
 
 RDKit is distributed under the BSD-3-Clause license; see `THIRD-PARTY-NOTICES.txt`.
+<!-- rdkit:end -->
