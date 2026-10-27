@@ -1,17 +1,19 @@
 # Release build of the VS Code extension: a self-contained backend for Linux
 # x64 and Windows x64 (Arrow, Parquet, HDF5 and the C++ runtime linked
-# statically via vcpkg), packaged with and without RDKit, and
-# published as a GitHub Release for tags v<major>.<minor>.<patch>.
+# statically via vcpkg), packaged with and without RDKit. The packages are
+# uploaded as the artifacts vsix-linux-x64 and vsix-win32-x64; nothing is
+# published here.
 #
-# Tags are created by `npm run release` (scripts/release.js). A tag whose
-# message contains "[prerelease]" is published as a pre-release. Run the
-# workflow from the Actions tab (workflow_dispatch) to build without publishing.
+# Started by `npm run release:build` (scripts/release.js), which downloads the
+# packages; `npm run release:publish` then publishes those same files.
 name: Release
 
 on:
-  push:
-    tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Version being built (must equal vscode/package.json)"
+        required: true
 
 permissions:
   contents: read
@@ -41,11 +43,10 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Check that the tag matches the extension version
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Check that the requested version is the extension version
         run: |
           version=$(node -p "require('./vscode/package.json').version")
-          test "v$version" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME != v$version"; exit 1; }
+          test "$version" = "${{ inputs.version }}" || { echo "vscode/package.json has $version, not ${{ inputs.version }}"; exit 1; }
 
       - name: Set up vcpkg (pinned to the manifest baseline)
         run: |
@@ -115,7 +116,7 @@ jobs:
         if: runner.os == 'Linux'
         env:
           MSENTITY_VIEWER_BACKEND: ${{ github.workspace }}/${{ matrix.backend }}
-        run: node --test tests/
+        run: node scripts/run-tests.js
 
       - name: Package (with and without RDKit)
         run: |
@@ -127,37 +128,3 @@ jobs:
         with:
           name: vsix-${{ matrix.target }}
           path: dist/*.vsix
-
-  # ---------------------------------------------------------------------------
-  release:
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-      - uses: actions/download-artifact@v8
-        with:
-          pattern: vsix-*
-          merge-multiple: true
-          path: release
-      - name: Create the GitHub Release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          version="${GITHUB_REF_NAME#v}"
-          # Fixed names for the releases/latest/download URLs.
-          for file in release/*-"$version"-*.vsix; do
-            cp "$file" "${file/-$version-/-}"
-          done
-          ls -la release
-          prerelease=""
-          if git tag -l --format='%(contents)' "$GITHUB_REF_NAME" | grep -q '\[prerelease\]'; then
-            prerelease="--prerelease"
-          fi
-          sed "s/@VERSION@/$version/g; s/@TAG@/$GITHUB_REF_NAME/g" .github/release-notes.md > notes.md
-          gh release create "$GITHUB_REF_NAME" release/*.vsix $prerelease \
-            --title "msentity Spectrum Viewer $GITHUB_REF_NAME" --notes-file notes.md --generate-notes

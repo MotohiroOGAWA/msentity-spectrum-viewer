@@ -3,7 +3,9 @@
   "private": true,
   "description": "Development scripts; the extension's manifest is vscode/package.json.",
   "scripts": {
-    "test": "node --test tests/",
-    "release": "node scripts/release.js"
+    "test": "node scripts/run-tests.js",
+    "release": "node scripts/release.js all",
+    "release:build": "node scripts/release.js build",
+    "release:publish": "node scripts/release.js publish"
   }
 }

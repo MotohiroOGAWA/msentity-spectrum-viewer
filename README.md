@@ -15,7 +15,7 @@ backend/                        msentity-viewer-backend (C++): answers the UI ov
 ui/                             UI components: dataset table, spectrum, similarity result
 host/                           Node.js host library: runs the backend; RDKit (WebAssembly) for chemistry
 vscode/                         the VS Code extension
-tests/                          backend protocol, host, and UI tests (node --test)
+tests/                          backend protocol, host, and UI tests (npm test)
 docs/                           protocol and embedding guides
 ```
 
@@ -45,7 +45,7 @@ cmake --build build                    # build/backend/msentity-viewer-backend
 ## Tests
 
 ```console
-node --test tests/                               # backend protocol, host library, UI (Node ≥ 20)
+npm test                                         # backend protocol, host library, UI (Node ≥ 20)
 ```
 
 `tests/ui/toolbar-ui.test.js` and the browser part of
@@ -72,15 +72,16 @@ node vscode/scripts/package-vsix.js --no-rdkit   # dist/msentity-spectrum-viewer
 (`linux-x64`, `win32-x64`). Packages for distribution need a
 backend built with `-DMSENTITY_STATIC_DEPS=ON` and vcpkg, so that it does not
 depend on Arrow/Parquet/HDF5 libraries on the user's machine;
-`.github/workflows/release.yml` builds them for every platform, and
-`npm run release` (`scripts/release.js`) starts a release.
+`.github/workflows/release.yml` builds them for every platform:
+`npm run release:build` builds and downloads them, and `npm run release:publish`
+publishes them (`scripts/release.js`).
 
 ## Updating msentity and msentity-similarity
 
 ```console
 git -C external/msentity fetch && git -C external/msentity checkout <commit>
 git -C external/msentity-similarity fetch && git -C external/msentity-similarity checkout <commit>
-cmake --build build && node --test tests/
+cmake --build build && npm test
 git add external/msentity external/msentity-similarity
 git commit -m "Update msentity and msentity-similarity"
 ```

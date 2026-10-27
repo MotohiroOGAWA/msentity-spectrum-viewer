@@ -156,7 +156,7 @@
   },
   "scripts": {
     "package": "node scripts/package-vsix.js",
-    "test": "node --test ../tests/"
+    "test": "node ../scripts/run-tests.js"
   },
   "devDependencies": {
     "@vscode/vsce": "^3.6.0"
