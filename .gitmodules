@@ -1,0 +1,6 @@
+[submodule "external/msentity"]
+	path = external/msentity
+	url = https://github.com/MotohiroOGAWA/msentity.git
+[submodule "external/msentity-similarity"]
+	path = external/msentity-similarity
+	url = https://github.com/MotohiroOGAWA/msentity-similarity.git

@@ -1,0 +1,8 @@
+{
+  "name": "msentity-spectrum-viewer-repository",
+  "private": true,
+  "description": "Development scripts; the extension's manifest is vscode/package.json.",
+  "scripts": {
+    "test": "node --test tests/"
+  }
+}

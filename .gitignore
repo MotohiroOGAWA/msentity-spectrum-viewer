@@ -1,0 +1,7 @@
+build/
+build-*/
+dist/
+node_modules/
+*.vsix
+__pycache__/
+*.pyc
