@@ -91,7 +91,7 @@ async function start() {
   if (process.env.MSENTITY_SPECTRUM_VIEWER_DISABLE_RDKIT !== "1") {
     try {
       RDKit = await require("@rdkit/rdkit")();
-      // Enable only what works, as the earlier Python helper did.
+      // Enable only the features whose smoke tests pass.
       const mol = RDKit.get_mol("CCO");
       const query = RDKit.get_qmol("C");
       smoke.smiles_parse = Boolean(mol && mol.is_valid());

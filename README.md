@@ -6,7 +6,7 @@ similarity results (`.mssim`), built on the C++ libraries
 msentity-similarity. It is distributed as a **VS Code extension**, and the
 repository is designed to be added to other projects as a **Git submodule**:
 the UI components, the backend, and msentity / msentity-similarity can each be
-used on their own. Nothing in it needs Python.
+used on their own.
 
 ```text
 external/msentity/              msentity (Git submodule): data model, MSDS/MSP/MGF/TSV/CSV

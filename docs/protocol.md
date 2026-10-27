@@ -179,6 +179,7 @@ Dataset table (`ui/viewer.js`):
 
 | UI message | host |
 |---|---|
+| `webview-ready` | sent once when the component listens for messages; the host holds backend messages until then |
 | `ready` {`datasetId`} | `page` {`page`: 0} |
 | `page-request` {`page`, `datasetId`, `filters`, `sort`} | `page` |
 | `reload` {`datasetId`, `filters`, `sort`} | `reload` |
@@ -196,7 +197,7 @@ Dataset table (`ui/viewer.js`):
 | `open-spectrum` {`payload`} | shows the payload in the spectrum component (`spectrum`) |
 | `*-notification`, `open-settings`, `show-logs` | shows a message, the settings, or the logs |
 
-Similarity result (`ui/similarity.js`): `page-request` → `page`, `reload` →
+Similarity result (`ui/similarity.js`): `webview-ready` as above; `page-request` → `page`, `reload` →
 `reload` (both with `page`, `filters`, `sort`, `bins`); `open-similarity-match`
 {`resultIndex`} → `match` {`row`}, whose answer opens a `spectrum-comparison`;
 `export-similarity` {`filters`, `sort`} → asks format and path → `export`;
@@ -212,7 +213,7 @@ the value → `update-peak-cell`; `save-image` and `save-peaks` save files.
 
 The host answers the chemistry requests with RDKit's WebAssembly build
 (`@rdkit/rdkit`), which runs in a Node.js worker thread
-(`host/chemistry/worker.js`); no Python is involved. `RdkitChemistry.call`
+(`host/chemistry/worker.js`). `RdkitChemistry.call`
 takes:
 
 | request | result |

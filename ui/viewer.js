@@ -147,7 +147,7 @@
   function renderLoading(text = "Loading msentity dataset…") {
     const progress = loadingProgress;
     const percent = Math.max(0, Math.min(100, Number(progress?.percent) || 0));
-    const details = progress ? `${percent.toFixed(1)}% · ${Number(progress.processed || 0).toLocaleString()} / ${Number(progress.total || 0).toLocaleString()} bytes · ${Number(progress.success || 0).toLocaleString()} spectra` : "Starting Python backend…";
+    const details = progress ? `${percent.toFixed(1)}% · ${Number(progress.processed || 0).toLocaleString()} / ${Number(progress.total || 0).toLocaleString()} bytes · ${Number(progress.success || 0).toLocaleString()} spectra` : "Reading the file…";
     app.innerHTML = `<div class="status"><div class="loading-card"><div class="loading-title">${esc(text)}</div><progress max="100" value="${percent}"></progress><div class="loading-details">${esc(details)}</div></div></div>`;
   }
 
@@ -703,4 +703,7 @@
   });
 
   renderLoading();
+  // Messages posted before this point would be lost: the host holds them
+  // until it receives this.
+  vscode.postMessage({ type: "webview-ready" });
 })();

@@ -17,7 +17,7 @@ test("library search with a loaded and a file reference", { skip }, () => {
     const messages = runBackend("dataset", query, [
       { type: "add-dataset", path: reference },
       { type: "calculate-similarity", mode: "library_search", dataset1: query, dataset2: reference,
-        path: loadedOutput, parameters: { threshold: 0.8, max_pairs_per_call: 2 } },
+        path: loadedOutput, parameters: { threshold: 0.8 } },
       { type: "calculate-similarity", mode: "library_search", dataset1: query, reference_path: reference,
         path: fileOutput, parameters: { threshold: 0.8, method: "reverse_cosine", include_matched_data: false } },
     ]);
@@ -63,7 +63,7 @@ test("key matching, result filters, histogram, and export", { skip }, () => {
       { type: "add-dataset", path: third },
       { type: "similarity-options" },
       { type: "calculate-similarity", dataset1: first, dataset2: second, path: output,
-        parameters: { key2: "OtherID", intensity_exponent: 0.5, max_cum_peaks: 1 } },
+        parameters: { key2: "OtherID", intensity_exponent: 0.5 } },
       { type: "calculate-similarity", dataset1: first, dataset2: third, path: output },
       { type: "calculate-similarity", dataset1: first, dataset2: first, path: output },
       { type: "calculate-similarity", dataset1: first, dataset2: second, path: first },

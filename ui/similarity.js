@@ -292,4 +292,7 @@
     }
   });
   render();
+  // Messages posted before this point would be lost: the host holds them
+  // until it receives this.
+  vscode.postMessage({ type: "webview-ready" });
 })();

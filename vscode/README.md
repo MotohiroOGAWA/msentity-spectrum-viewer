@@ -3,7 +3,7 @@
 Graphical viewer for mass-spectrometry datasets — MSDS, MSP, MGF, TSV, and
 CSV — and for spectrum similarity results (`.mssim`). Data is read by
 [msentity](https://github.com/MotohiroOGAWA/msentity), a C++ library that ships
-inside the extension: **no Python installation is needed**.
+inside the extension, so nothing else needs to be installed.
 
 ## Features
 

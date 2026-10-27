@@ -30,12 +30,12 @@ json to_json(const Value& value);
 // Values of an Arrow column (null, bool, integers, floats, strings).
 std::vector<Value> array_values(const arrow::ChunkedArray& column);
 
-// Text of a cell as Python's str() would show it: "" for missing values,
-// "True"/"False", "250", "20.0".
+// Text of a cell for text filters: "" for missing values, "True"/"False",
+// "250", "20.0" (msentity::to_display_string).
 std::string display_text(const Value& value);
 
-// Number of a cell for numeric comparison (pandas.to_numeric with
-// errors="coerce"): numbers and numeric text; nullopt otherwise.
+// Number of a cell for numeric comparison: numbers, booleans (1/0), and
+// numeric text; nullopt otherwise.
 std::optional<double> numeric_value(const Value& value);
 
 // Number from text; nullopt unless the whole text is a number.

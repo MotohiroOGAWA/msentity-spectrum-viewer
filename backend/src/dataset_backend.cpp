@@ -497,8 +497,6 @@ class DatasetBackend {
         key1 = json_text(value);
       } else if (name == "key2") {
         key2 = json_text(value);
-      } else if (name == "max_cum_peaks" || name == "max_pairs_per_call") {
-        // Chunk sizes of the earlier Python implementation; not needed.
       } else {
         throw std::invalid_argument("Unknown similarity parameter: " + name);
       }

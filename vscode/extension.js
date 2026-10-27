@@ -103,11 +103,17 @@ class MSEntityViewerProvider {
 
     const droppedDirectories = new Set();
     let disposed = false;
+    // The webview announces "webview-ready" once it listens for messages;
+    // until then backend messages are held so that none is lost.
+    let webviewReady = false;
+    const held = [];
     const send = (message) => {
-      if (!disposed) webview.postMessage(message);
+      if (disposed) return;
+      if (webviewReady) webview.postMessage(message);
+      else held.push(message);
     };
     if (!executable) {
-      send({
+      webview.postMessage({
         type: "error",
         title: "Viewer backend not found",
         message: "msentity-viewer-backend is not part of this installation. Install the extension package for your platform, or set msentitySpectrumViewer.backendPath."
@@ -171,6 +177,10 @@ class MSEntityViewerProvider {
 
     const messageDisposable = webview.onDidReceiveMessage(async (message) => {
       switch (message?.type) {
+        case "webview-ready":
+          webviewReady = true;
+          for (const pending of held.splice(0)) webview.postMessage(pending);
+          break;
         case "ready":
           writeRequest({ type: "page", page: 0, dataset_id: message.datasetId,
             ...configuredStructureOptions() });
