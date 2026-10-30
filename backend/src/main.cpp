@@ -25,7 +25,12 @@ namespace {
 
 int usage() {
   std::cerr << "usage:\n"
-               "  msentity-viewer-backend dataset <file> [--page-size N] [--file-type T]\n"
+               "  msentity-viewer-backend dataset <file> [options]\n"
+               "    --page-size N --file-type T --spec-id-prefix P --infer-types\n"
+               "    --allow-duplicate-cols --canonicalize-column\n"
+               "    --canonicalize-adduct-type --normalize-intensity\n"
+               "    --error-log-level none|basic|detail --error-log-file PATH\n"
+               "    --error-context-lines N\n"
                "  msentity-viewer-backend similarity <file.mssim> [--page-size N]\n"
                "  msentity-viewer-backend --version\n";
   return 2;
@@ -41,6 +46,7 @@ int run(const std::vector<std::string>& args) {
   std::string path = args[1];
   std::optional<int> page_size;
   std::optional<std::string> file_type;
+  viewer::DatasetLoadOptions load_options;
   for (std::size_t i = 2; i < args.size(); ++i) {
     if (args[i] == "--page-size" && i + 1 < args.size()) {
       try {
@@ -50,11 +56,43 @@ int run(const std::vector<std::string>& args) {
       }
     } else if (args[i] == "--file-type" && i + 1 < args.size()) {
       file_type = args[++i];
+    } else if (args[i] == "--spec-id-prefix" && i + 1 < args.size()) {
+      load_options.spec_id_prefix = args[++i];
+    } else if (args[i] == "--infer-types") {
+      load_options.infer_types = true;
+    } else if (args[i] == "--allow-duplicate-cols") {
+      load_options.allow_duplicate_cols = true;
+    } else if (args[i] == "--canonicalize-column") {
+      load_options.canonicalize_column = true;
+    } else if (args[i] == "--no-canonicalize-column") {
+      load_options.canonicalize_column = false;
+    } else if (args[i] == "--canonicalize-adduct-type") {
+      load_options.canonicalize_adduct_type = true;
+    } else if (args[i] == "--no-canonicalize-adduct-type") {
+      load_options.canonicalize_adduct_type = false;
+    } else if (args[i] == "--normalize-intensity") {
+      load_options.normalize_intensity = true;
+    } else if (args[i] == "--no-normalize-intensity") {
+      load_options.normalize_intensity = false;
+    } else if (args[i] == "--error-log-level" && i + 1 < args.size()) {
+      load_options.error_log_level = args[++i];
+      if (load_options.error_log_level != "none" && load_options.error_log_level != "basic" &&
+          load_options.error_log_level != "detail") return usage();
+    } else if (args[i] == "--error-log-file" && i + 1 < args.size()) {
+      load_options.error_log_file = args[++i];
+    } else if (args[i] == "--error-context-lines" && i + 1 < args.size()) {
+      try {
+        load_options.error_context_lines = std::stoi(args[++i]);
+        if (load_options.error_context_lines < 0) return usage();
+      } catch (const std::exception&) {
+        return usage();
+      }
     } else {
       return usage();
     }
   }
-  if (mode == "dataset") return viewer::run_dataset_backend(path, page_size.value_or(20), file_type);
+  if (mode == "dataset")
+    return viewer::run_dataset_backend(path, page_size.value_or(20), file_type, load_options);
   if (mode == "similarity") return viewer::run_similarity_backend(path, page_size.value_or(50));
   return usage();
 }

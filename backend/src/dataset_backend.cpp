@@ -61,7 +61,8 @@ class Throttle {
   int last_ = -1;
 };
 
-MSDataset load_dataset(const fs::path& path, const std::optional<std::string>& file_type) {
+MSDataset load_dataset(const fs::path& path, const std::optional<std::string>& file_type,
+                       const DatasetLoadOptions& load_options) {
   std::string type = file_type ? fold_case(*file_type) : lower_extension(path);
   msentity::io::ReadProgressCallback progress;
   Throttle throttle;
@@ -76,7 +77,25 @@ MSDataset load_dataset(const fs::path& path, const std::optional<std::string>& f
             {"total", total}, {"success", success}, {"records", records}, {"percent", percent}});
     };
   }
-  return msentity::io::load_ms_dataset(utf8(path), type, std::nullopt, progress, false);
+  if (type == "msp" || type == "mgf") {
+    msentity::io::TextReadOptions options;
+    options.canonicalize_column = load_options.canonicalize_column;
+    options.canonicalize_adduct_type = load_options.canonicalize_adduct_type;
+    options.normalize_intensity = load_options.normalize_intensity;
+    options.allow_duplicate_cols = load_options.allow_duplicate_cols;
+    options.spec_id_prefix = load_options.spec_id_prefix;
+    options.error_log_file = load_options.error_log_file;
+    options.error_context_lines = static_cast<std::size_t>(load_options.error_context_lines);
+    options.progress_callback = progress;
+    if (load_options.error_log_level == "basic")
+      options.error_log_level = msentity::io::ErrorLogLevel::Basic;
+    else if (load_options.error_log_level == "detail")
+      options.error_log_level = msentity::io::ErrorLogLevel::Detail;
+    return type == "msp" ? msentity::io::read_msp(utf8(path), options)
+                         : msentity::io::read_mgf(utf8(path), options);
+  }
+  return msentity::io::load_ms_dataset(utf8(path), type, load_options.spec_id_prefix, {},
+                                       load_options.infer_types);
 }
 
 struct Entry {
@@ -127,7 +146,8 @@ Value edited_value(const Value& old_value, const std::string& text, bool allow_o
 
 class DatasetBackend {
  public:
-  DatasetBackend(int page_size) : page_size_(page_size) {}
+  DatasetBackend(int page_size, DatasetLoadOptions load_options)
+      : page_size_(page_size), load_options_(std::move(load_options)) {}
 
   int run(const fs::path& input, const std::optional<std::string>& file_type) {
     if (!fs::is_regular_file(input)) {
@@ -136,7 +156,7 @@ class DatasetBackend {
     }
     MSDataset dataset;
     try {
-      dataset = load_dataset(input, file_type);
+      dataset = load_dataset(input, file_type, load_options_);
     } catch (const std::exception& error) {
       std::cerr << error.what() << std::endl;
       emit({{"type", "error"}, {"title", "Could not load dataset"}, {"message", error.what()}});
@@ -271,7 +291,7 @@ class DatasetBackend {
       add_dataset(request);
     } else if (type == "reload") {
       Entry& source = entry(id);
-      source.dataset = load_dataset(source.path, source.file_type);
+      source.dataset = load_dataset(source.path, source.file_type, load_options_);
       emit({{"type", "dataset-reloaded"}, {"dataset_id", id}});
       send_page(id, request, 0);
     } else if (type == "similarity-options") {
@@ -426,7 +446,7 @@ class DatasetBackend {
       file_type = request["file_type"].get<std::string>();
     }
     // Each addition reads the source again and owns independent edits.
-    MSDataset dataset = load_dataset(path, file_type);
+    MSDataset dataset = load_dataset(path, file_type, load_options_);
     std::string id = utf8(path);
     if (used_ids_.count(id)) {
       std::random_device random;
@@ -458,7 +478,8 @@ class DatasetBackend {
     if (!reference_path.empty()) {
       fs::path path = resolve(reference_path);
       if (!fs::is_regular_file(path)) throw std::runtime_error("No such file: " + utf8(path));
-      loaded = Entry{load_dataset(path, std::nullopt), path, std::nullopt, utf8(path.filename())};
+      loaded = Entry{load_dataset(path, std::nullopt, load_options_), path, std::nullopt,
+                     utf8(path.filename())};
       second = &loaded;
     } else {
       std::string id2 = json_text(request.value("dataset2", json()));
@@ -609,13 +630,16 @@ class DatasetBackend {
       emit({{"type", "export-error"}, {"message", error.what()}});
     }
   }
+
+  DatasetLoadOptions load_options_;
 };
 
 }  // namespace
 
 int run_dataset_backend(const std::string& path, int page_size,
-                        const std::optional<std::string>& file_type) {
-  DatasetBackend backend(std::min(500, std::max(1, page_size)));
+                        const std::optional<std::string>& file_type,
+                        const DatasetLoadOptions& load_options) {
+  DatasetBackend backend(std::min(500, std::max(1, page_size)), load_options);
   return backend.run(resolve(path), file_type);
 }
 

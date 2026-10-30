@@ -21,6 +21,10 @@ The same messages are used on both links:
 
 ```console
 msentity-viewer-backend dataset <file> [--page-size 20] [--file-type msds|msp|mgf|tsv|csv]
+  [--spec-id-prefix P] [--infer-types] [--allow-duplicate-cols]
+  [--canonicalize-column] [--canonicalize-adduct-type] [--normalize-intensity]
+  [--error-log-level none|basic|detail] [--error-log-file PATH]
+  [--error-context-lines N]
 msentity-viewer-backend similarity <file.mssim> [--page-size 50]
 ```
 
