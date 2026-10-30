@@ -29,7 +29,7 @@ try { ({ chromium } = require('playwright')); } catch { chromium = null; }
     await page.locator('#dataset-select').click(); await page.locator('#remove-dataset').click(); assert.equal((await last()).type, 'remove-dataset');
     await send({type: 'dataset-removed', dataset_id: 'added'}); await datasetPage('original');
     await open(); assert.equal(await visible(), true);
-    assert.deepEqual(await page.locator('#more-actions-menu button').allTextContents(), ['Metadata', 'Columns', 'Assign SpecID', 'Calculate similarity', 'Settings']);
+    assert.deepEqual(await page.locator('#more-actions-menu button').allTextContents(), ['Metadata', 'Columns', 'Assign SpecID', 'Calculate similarity', 'Loading options and reload', 'Settings']);
     await page.locator('.summary').click(); assert.equal(await visible(), false);
     await open(); await page.keyboard.press('Escape'); assert.equal(await visible(), false);
     assert.equal(await page.locator('#more-actions-button').evaluate(e => e === document.activeElement), true);
@@ -62,6 +62,7 @@ try { ({ chromium } = require('playwright')); } catch { chromium = null; }
     for (const [id, type] of [['assign-spec-id-button', 'assign-spec-id'], ['export-button', 'export-dataset'], ['similarity-button', 'calculate-similarity']]) {
       await open(); await page.locator('#' + id).click(); assert.equal((await last()).type, type); assert.equal(await visible(), false);
     }
+    await open(); await page.locator('#loading-options-button').click(); assert.equal((await last()).type, 'change-load-options');
     await send({type: 'export-cancelled'});
     await send({type: 'export-start'});
     await send({type: 'export-progress', processed: 1, total: 4, percent: 25});

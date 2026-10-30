@@ -35,6 +35,61 @@ function configuredStructurePreviewSize() {
   };
 }
 
+function configuredLoadOptions() {
+  const config = vscode.workspace.getConfiguration("msentitySpectrumViewer");
+  return {
+    allowDuplicateColumns: config.get("loading.allowDuplicateColumns", false) === true,
+    canonicalizeColumns: config.get("loading.canonicalizeColumns", false) === true,
+    canonicalizeAdductTypes: config.get("loading.canonicalizeAdductTypes", false) === true,
+    normalizeIntensity: config.get("loading.normalizeIntensity", false) === true,
+    specIdPrefix: String(config.get("loading.specIdPrefix", "") || ""),
+    inferTypes: config.get("loading.inferTypes", false) === true,
+    errorLogLevel: String(config.get("loading.errorLogLevel", "none") || "none"),
+    errorLogFile: String(config.get("loading.errorLogFile", "") || ""),
+  };
+}
+
+async function chooseLoadOptions(current) {
+  const choices = [
+    ["allowDuplicateColumns", "Allow duplicate columns", "Rename duplicate MSP/MGF fields instead of discarding the record"],
+    ["canonicalizeColumns", "Canonicalize columns", "Convert source field names to canonical msentity names"],
+    ["canonicalizeAdductTypes", "Canonicalize adduct types", "Normalize values such as [M+H]1+ to [M+H]+"],
+    ["normalizeIntensity", "Normalize intensity", "Scale each spectrum so its base peak is 1"],
+    ["inferTypes", "Infer TSV/CSV types", "Read numeric columns as numbers"],
+  ];
+  const selected = await vscode.window.showQuickPick(
+    choices.map(([key, label, description]) => ({ key, label, description, picked: current[key] === true })),
+    { title: "Dataset loading options", placeHolder: "Select enabled options", canPickMany: true, ignoreFocusOut: true }
+  );
+  if (selected === undefined) return null;
+  const next = { ...current };
+  for (const [key] of choices) next[key] = selected.some(item => item.key === key);
+  const prefix = await vscode.window.showInputBox({
+    title: "Dataset loading options — SpecID prefix",
+    prompt: "Optional. Leave empty to keep the source SpecID unchanged.",
+    value: next.specIdPrefix || "", ignoreFocusOut: true
+  });
+  if (prefix === undefined) return null;
+  next.specIdPrefix = prefix;
+  const level = await vscode.window.showQuickPick([
+    { label: "None", value: "none", description: "Do not write an error log" },
+    { label: "Basic", value: "basic", description: "Write line numbers and error messages" },
+    { label: "Detail", value: "detail", description: "Also include the source context" },
+  ], { title: "Dataset loading options — Error log", placeHolder: `Current: ${next.errorLogLevel}`, ignoreFocusOut: true });
+  if (!level) return null;
+  next.errorLogLevel = level.value;
+  if (level.value !== "none") {
+    const file = await vscode.window.showInputBox({
+      title: "Dataset loading options — Error log file",
+      prompt: "Optional. Leave empty to use msentity's generated log filename.",
+      value: next.errorLogFile || "", ignoreFocusOut: true
+    });
+    if (file === undefined) return null;
+    next.errorLogFile = file;
+  }
+  return next;
+}
+
 // Directory of a component shipped with the extension (ui, host, bin). A packaged extension contains them; when the extension runs from the
 // repository (vscode/), they are found one level up.
 function resourceDir(context, name) {
@@ -63,9 +118,10 @@ function requestColumn(message, writeRequest) {
 }
 
 class MSEntityDocument {
-  constructor(uri, fileType = null) {
+  constructor(uri, fileType = null, loadOptions = null) {
     this.uri = uri;
     this.fileType = fileType;
+    this.loadOptions = loadOptions;
   }
   dispose() {}
 }
@@ -76,13 +132,16 @@ class MSEntityViewerProvider {
     this.iconPath = vscode.Uri.joinPath(context.extensionUri, "media", "editor-icon.png");
     this.spectrumPanels = new Map();
     this.forcedFileTypes = new Map();
+    this.forcedLoadOptions = new Map();
   }
 
   async openCustomDocument(uri) {
     const key = uri.toString();
     const fileType = this.forcedFileTypes.get(key) || null;
+    const loadOptions = this.forcedLoadOptions.get(key) || null;
     this.forcedFileTypes.delete(key);
-    return new MSEntityDocument(uri, fileType);
+    this.forcedLoadOptions.delete(key);
+    return new MSEntityDocument(uri, fileType, loadOptions);
   }
 
   async resolveCustomEditor(document, webviewPanel) {
@@ -95,6 +154,7 @@ class MSEntityViewerProvider {
 
     const config = vscode.workspace.getConfiguration("msentitySpectrumViewer");
     const pageSize = Math.max(1, Math.min(500, Number(config.get("pageSize", 20)) || 20));
+    const loadOptions = document.loadOptions || configuredLoadOptions();
     const host = loadHost(this.context);
     const executable = resolveBackendExecutable(this.context, host);
 
@@ -124,6 +184,7 @@ class MSEntityViewerProvider {
     const backend = new host.BackendProcess({
       executable, mode: isSimilarity ? "similarity" : "dataset", file: document.uri.fsPath,
       pageSize: isSimilarity ? undefined : pageSize, fileType: document.fileType || undefined,
+      loadOptions: isSimilarity ? {} : loadOptions,
     });
     // Dataset viewers go through a session (SMARTS filters, structures);
     // similarity viewers talk to the backend directly.
@@ -240,6 +301,17 @@ class MSEntityViewerProvider {
             `@ext:${this.context.extension.packageJSON.publisher}.${this.context.extension.packageJSON.name}`
           );
           break;
+        case "change-load-options": {
+          if (isSimilarity) break;
+          const next = await chooseLoadOptions(loadOptions);
+          if (!next || disposed) break;
+          document.loadOptions = next;
+          this.forcedLoadOptions.set(document.uri.toString(), next);
+          if (document.fileType) this.forcedFileTypes.set(document.uri.toString(), document.fileType);
+          webviewPanel.dispose();
+          setTimeout(() => vscode.commands.executeCommand("vscode.openWith", document.uri, VIEW_TYPE), 0);
+          break;
+        }
         case "chemistry-error-notification":
         case "filter-error-notification":
         case "structure-counts-error-notification":

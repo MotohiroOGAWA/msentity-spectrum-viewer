@@ -48,19 +48,29 @@ function findBackendExecutable({ roots = [], override = "", env = process.env } 
  * Events: "message" (object), "log" (line, stream), "error" (Error), "exit" (code, signal).
  */
 class BackendProcess extends EventEmitter {
-  constructor({ executable, mode, file, pageSize, fileType, cwd, env } = {}) {
+  constructor({ executable, mode, file, pageSize, fileType, loadOptions = {}, cwd, env } = {}) {
     super();
-    this.options = { executable, mode, file, pageSize, fileType, cwd, env };
+    this.options = { executable, mode, file, pageSize, fileType, loadOptions, cwd, env };
     this.child = null;
     this.pending = new Map();
     this.nextRequestId = 1;
   }
 
   start() {
-    const { executable, mode, file, pageSize, fileType, cwd, env } = this.options;
+    const { executable, mode, file, pageSize, fileType, loadOptions, cwd, env } = this.options;
     const args = [mode, file];
     if (pageSize) args.push("--page-size", String(pageSize));
     if (fileType) args.push("--file-type", fileType);
+    if (loadOptions.specIdPrefix) args.push("--spec-id-prefix", loadOptions.specIdPrefix);
+    if (loadOptions.inferTypes) args.push("--infer-types");
+    if (loadOptions.allowDuplicateColumns) args.push("--allow-duplicate-cols");
+    if (loadOptions.canonicalizeColumns) args.push("--canonicalize-column");
+    if (loadOptions.canonicalizeAdductTypes) args.push("--canonicalize-adduct-type");
+    if (loadOptions.normalizeIntensity) args.push("--normalize-intensity");
+    if (loadOptions.errorLogLevel && loadOptions.errorLogLevel !== "none") {
+      args.push("--error-log-level", loadOptions.errorLogLevel);
+    }
+    if (loadOptions.errorLogFile) args.push("--error-log-file", loadOptions.errorLogFile);
     const child = spawn(executable, args, {
       cwd: cwd || path.dirname(file), env: env || process.env, stdio: ["pipe", "pipe", "pipe"],
     });

@@ -148,7 +148,9 @@
     const progress = loadingProgress;
     const percent = Math.max(0, Math.min(100, Number(progress?.percent) || 0));
     const details = progress ? `${percent.toFixed(1)}% · ${Number(progress.processed || 0).toLocaleString()} / ${Number(progress.total || 0).toLocaleString()} bytes · ${Number(progress.success || 0).toLocaleString()} spectra` : "Reading the file…";
-    app.innerHTML = `<div class="status"><div class="loading-card"><div class="loading-title">${esc(text)}</div><progress max="100" value="${percent}"></progress><div class="loading-details">${esc(details)}</div></div></div>`;
+    app.innerHTML = `<div class="status"><div class="loading-card"><div class="loading-title">${esc(text)}</div><progress max="100" value="${percent}"></progress><div class="loading-details">${esc(details)}</div><button class="secondary-button" id="loading-options-button">Change loading options and reload</button></div></div>`;
+    document.getElementById("loading-options-button")?.addEventListener("click", () =>
+      vscode.postMessage({ type: "change-load-options" }));
   }
 
   function renderError(title, message) {
@@ -236,6 +238,7 @@
               <div class="more-actions-divider" role="separator"></div>
               <button class="more-action" role="menuitem" id="similarity-button" ${calculatingSimilarity || datasetOptions.length < 1 ? "disabled" : ""} title="Run a library search or compare matching metadata keys">${toolbarIcon("similarity")}<span class="menu-action-label">${calculatingSimilarity ? `Calculating…${similarityProgress == null ? "" : ` ${similarityProgress.toFixed(1)}%`}` : "Calculate similarity"}</span></button>
               <div class="more-actions-divider" role="separator"></div>
+              <button class="more-action" role="menuitem" id="loading-options-button">${toolbarIcon("reload")}<span class="menu-action-label">Loading options and reload</span></button>
               <button class="more-action" role="menuitem" id="settings-button">${toolbarIcon("settings")}<span class="menu-action-label">Settings</span></button>
             </div>
             ${columnMenu}
@@ -391,6 +394,9 @@
     });
     document.getElementById("settings-button")?.addEventListener("click", () => {
       moreActionsOpen = false; render(); vscode.postMessage({ type: "open-settings" });
+    });
+    document.getElementById("loading-options-button")?.addEventListener("click", () => {
+      moreActionsOpen = false; render(); vscode.postMessage({ type: "change-load-options" });
     });
     document.getElementById("add-dataset")?.addEventListener("click", () => { datasetMenuOpen = false; render(); vscode.postMessage({ type: "add-dataset" }); });
     document.getElementById("assign-spec-id-button")?.addEventListener("click", () => {

@@ -45,3 +45,26 @@ test("messages, logs, and exit of a backend process", { skip }, async () => {
     tmp.cleanup();
   }
 });
+
+test("passes loading options to the backend", { skip }, async () => {
+  const tmp = tempDir();
+  try {
+    const file = tmp.file("duplicate.msp", "Name: first\nNAME: alias\nNumPeaks: 1\n100 50\n\n");
+    const backend = new BackendProcess({
+      executable: BACKEND, mode: "dataset", file,
+      loadOptions: { canonicalizeColumns: true, allowDuplicateColumns: true, normalizeIntensity: true }
+    });
+    const page = new Promise((resolve) => backend.on("message", message => {
+      if (message.type === "dataset-page") resolve(message.value);
+    }));
+    backend.start();
+    backend.send({ type: "page", page: 0 });
+    const value = await page;
+    assert.equal(value.rows[0].Name, "first");
+    assert.equal(value.rows[0].Name1, "alias");
+    assert.deepEqual(value.spectra[0].intensity, [1]);
+    backend.stop();
+  } finally {
+    tmp.cleanup();
+  }
+});

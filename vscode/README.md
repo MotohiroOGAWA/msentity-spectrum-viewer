@@ -13,6 +13,7 @@ inside the extension, so nothing else needs to be installed.
 - Edit dataset description, attributes, tags, metadata cells, and peak annotations; add columns
 - Assign sequential SpecID values with an optional prefix
 - MSP/MGF loading progress with bytes, percentage, and spectrum count
+- Configurable MSP/MGF loading (duplicate fields, canonicalization, intensity normalization, and error logs) and TSV/CSV type inference
 - Export to MSDS, MSP, MGF, TSV, or CSV using the visible columns and current filters/sort order
 <!-- rdkit:start -->
 - SMARTS substructure filtering, 2D structure previews, and structure counts (RDKit, included)
@@ -79,6 +80,20 @@ then switch between them with the dataset dropdown. Spectra opened from those
 datasets share the same Mass Spectrum panel, while datasets opened in separate
 VS Code tabs continue to use separate spectrum panels. Each dataset remembers
 its current page when you switch away and return.
+
+### Loading options
+
+Use **More ... → Loading options and reload** to change how the current file is
+read. This action is available while the file is still loading and after it has
+opened. It stops the current reader and opens the same file again with the
+selected options. Unsaved edits in the viewer are discarded.
+
+The default options for newly opened files are available under **Settings →
+Extensions → msentity Spectrum Viewer → Loading**. They control duplicate
+MSP/MGF fields, column and adduct canonicalization, intensity normalization,
+SpecID assignment, TSV/CSV type inference, and optional error logging. Error
+logging defaults to `none`, so no log is created unless it is explicitly
+enabled.
 
 Pin the upper spectrum and select another spectrum to compare them on a shared
 m/z axis. The second spectrum is drawn downward in red. Each side can be pinned

@@ -122,6 +122,47 @@
           "maximum": 500,
           "description": "Number of spectra loaded per page."
         },
+        "msentitySpectrumViewer.loading.allowDuplicateColumns": {
+          "type": "boolean",
+          "default": false,
+          "description": "Rename duplicate MSP/MGF metadata fields (Name, Name1, ...) instead of discarding the record. Applies when a file is opened."
+        },
+        "msentitySpectrumViewer.loading.canonicalizeColumns": {
+          "type": "boolean",
+          "default": false,
+          "description": "Canonicalize MSP/MGF column names while loading (for example PRECURSORMZ to PrecursorMZ)."
+        },
+        "msentitySpectrumViewer.loading.canonicalizeAdductTypes": {
+          "type": "boolean",
+          "default": false,
+          "description": "Canonicalize MSP/MGF adduct values while loading (for example [M+H]1+ to [M+H]+)."
+        },
+        "msentitySpectrumViewer.loading.normalizeIntensity": {
+          "type": "boolean",
+          "default": false,
+          "description": "Normalize each MSP/MGF spectrum so its base peak has intensity 1."
+        },
+        "msentitySpectrumViewer.loading.specIdPrefix": {
+          "type": "string",
+          "default": "",
+          "description": "Optional prefix used to assign sequential SpecID values while loading."
+        },
+        "msentitySpectrumViewer.loading.inferTypes": {
+          "type": "boolean",
+          "default": false,
+          "description": "Infer numeric TSV/CSV column types while loading."
+        },
+        "msentitySpectrumViewer.loading.errorLogLevel": {
+          "type": "string",
+          "enum": ["none", "basic", "detail"],
+          "default": "none",
+          "description": "Error logging level for skipped MSP/MGF records. The default 'none' writes no log."
+        },
+        "msentitySpectrumViewer.loading.errorLogFile": {
+          "type": "string",
+          "default": "",
+          "description": "Optional path for the MSP/MGF error log. No log is written when the error log level is 'none'."
+        },
         "msentitySpectrumViewer.spectrumFloatingWindow": {
           "type": "boolean",
           "default": true,
