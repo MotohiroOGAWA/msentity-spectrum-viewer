@@ -2,7 +2,7 @@
   "name": "msentity-spectrum-viewer",
   "displayName": "msentity Spectrum Viewer",
   "description": "View msentity datasets (MSDS, MSP, MGF, TSV, CSV) and similarity results (.mssim) in VS Code, powered by the msentity C++ library.",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "publisher": "motohiroogawa",
   "icon": "media/editor-icon.png",
   "license": "MIT",
@@ -154,7 +154,11 @@
         },
         "msentitySpectrumViewer.loading.errorLogLevel": {
           "type": "string",
-          "enum": ["none", "basic", "detail"],
+          "enum": [
+            "none",
+            "basic",
+            "detail"
+          ],
           "default": "none",
           "description": "Error logging level for skipped MSP/MGF records. The default 'none' writes no log."
         },
@@ -165,8 +169,14 @@
         },
         "msentitySpectrumViewer.similarity.method": {
           "type": "string",
-          "enum": ["cosine", "reverse_cosine"],
-          "enumDescriptions": ["Normalize all peaks in both spectra", "Ignore unmatched query peaks in the query norm"],
+          "enum": [
+            "cosine",
+            "reverse_cosine"
+          ],
+          "enumDescriptions": [
+            "Normalize all peaks in both spectra",
+            "Ignore unmatched query peaks in the query norm"
+          ],
           "default": "cosine",
           "description": "Default method of Calculate Similarity."
         },
@@ -208,8 +218,18 @@
         },
         "msentitySpectrumViewer.spectrumComparison.method": {
           "type": "string",
-          "enum": ["dot", "reverse", "modified", "bonanza"],
-          "enumDescriptions": ["Dot product", "Reverse dot product", "Modified dot product (also matches precursor-shifted peaks)", "BONANZA score"],
+          "enum": [
+            "dot",
+            "reverse",
+            "modified",
+            "bonanza"
+          ],
+          "enumDescriptions": [
+            "Dot product",
+            "Reverse dot product",
+            "Modified dot product (also matches precursor-shifted peaks)",
+            "BONANZA score"
+          ],
           "default": "dot",
           "description": "Initial score method when two spectra are compared in the Mass Spectrum view."
         },

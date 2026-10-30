@@ -6,7 +6,7 @@ cmake_minimum_required(VERSION 3.21)
 #   msentity::msentity     (external/msentity)
 #   msentity::similarity   (external/msentity-similarity)
 project(msentity_spectrum_viewer
-  VERSION 1.0.1
+  VERSION 1.0.2
   DESCRIPTION "msentity spectrum viewer: UI, backend, and msentity libraries"
   LANGUAGES CXX)
 
