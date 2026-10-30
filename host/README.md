@@ -9,6 +9,7 @@ connects both to the UI components; no VS Code dependency.
 | `findBackendExecutable({roots, override})` | the backend in `bin/<platform>/` or `build/backend/` |
 | `RdkitChemistry` | RDKit (WebAssembly) in a worker thread: `capabilities` (Promise), `call("smarts-match" \| "structure-counts" \| "render", params)`, `stop()` |
 | `DatasetSession` | dataset viewer requests: resolves SMARTS filters, answers structure requests, adds `capabilities` |
+| `SIMILARITY_DEFAULTS`, `similaritySettings(overrides)` | default parameters of `calculate-similarity` (method, threshold, m/z tolerance in Da/ppm, intensity exponent, …) and a validated copy with a host's own defaults applied |
 
 RDKit is the optional dependency `@rdkit/rdkit` (`npm install` here). Without
 it, `RdkitChemistry` reports every capability as false and the rest works.

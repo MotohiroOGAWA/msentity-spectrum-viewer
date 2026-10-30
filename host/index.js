@@ -9,4 +9,5 @@ module.exports = {
   ...require("./backend"),
   ...require("./chemistry"),
   ...require("./session"),
+  ...require("./similarity"),
 };

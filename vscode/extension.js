@@ -49,6 +49,36 @@ function configuredLoadOptions() {
   };
 }
 
+// Defaults of the similarity wizard: msentitySpectrumViewer.similarity.*
+// over the host library's SIMILARITY_DEFAULTS.
+function configuredSimilaritySettings(host) {
+  const config = vscode.workspace.getConfiguration("msentitySpectrumViewer.similarity");
+  const names = {
+    method: "method", threshold: "threshold", mz_tolerance_da: "mzToleranceDa",
+    mz_tolerance_ppm: "mzTolerancePpm", intensity_exponent: "intensityExponent",
+    include_matched_data: "includeMatchedData", threads: "threads",
+  };
+  const overrides = {};
+  for (const [name, setting] of Object.entries(names)) overrides[name] = config.get(setting);
+  try {
+    return host.similaritySettings(overrides);
+  } catch (error) {
+    throw new Error(`${error.message} (check the msentitySpectrumViewer.similarity settings)`);
+  }
+}
+
+// Defaults of the score in the spectrum comparison view:
+// msentitySpectrumViewer.spectrumComparison.* over COMPARISON_DEFAULTS.
+function configuredComparisonSettings(host) {
+  const config = vscode.workspace.getConfiguration("msentitySpectrumViewer.spectrumComparison");
+  try {
+    return host.comparisonSettings({ method: config.get("method"), tolerance_da: config.get("toleranceDa") });
+  } catch (error) {
+    outputChannel?.appendLine(`[settings] ${error.message}; using the default comparison settings`);
+    return host.comparisonSettings();
+  }
+}
+
 async function chooseLoadOptions(current) {
   const choices = [
     ["allowDuplicateColumns", "Allow duplicate columns", "Combine duplicate MSP/MGF values as quoted CSV instead of discarding the record"],
@@ -190,10 +220,11 @@ class MSEntityViewerProvider {
     // similarity viewers talk to the backend directly.
     const onBackendMessage = (message) => {
       if (message.type === "similarity-options") {
-        this.configureSimilarity(
-          message.datasets, message.active_dataset_id, document.uri,
-          writeRequest, send, () => disposed
-        )
+        Promise.resolve()
+          .then(() => this.configureSimilarity(
+            message.datasets, message.active_dataset_id, document.uri,
+            writeRequest, send, () => disposed, configuredSimilaritySettings(host)
+          ))
           .catch((error) => send({ type: "similarity-error", message: error.message || String(error) }));
       } else if (message.type === "similarity-complete") {
         vscode.commands.executeCommand("vscode.openWith", vscode.Uri.file(message.path), SIMILARITY_VIEW_TYPE)
@@ -501,7 +532,8 @@ class MSEntityViewerProvider {
     return this.chemistryProvider;
   }
 
-  async configureSimilarity(datasets, activeDatasetId, documentUri, writeRequest, send, isDisposed) {
+  // `defaults`: similarity settings (host similaritySettings()) shown as the initial choices.
+  async configureSimilarity(datasets, activeDatasetId, documentUri, writeRequest, send, isDisposed, defaults) {
     const cancel = () => send({ type: "similarity-cancelled" });
     if (!datasets.length) throw new Error("No dataset is loaded.");
     const modeChoice = await vscode.window.showQuickPick([
@@ -567,12 +599,14 @@ class MSEntityViewerProvider {
       second = choice.dataset;
     }
 
-    const methodChoice = await vscode.window.showQuickPick([
+    const defaultFirst = (items, isDefault) => [...items.filter(isDefault), ...items.filter((item) => !isDefault(item))]
+      .map((item) => isDefault(item) ? { ...item, detail: "Default (msentitySpectrumViewer.similarity settings)" } : item);
+    const methodChoice = await vscode.window.showQuickPick(defaultFirst([
       { label: "Cosine similarity", description: "Normalize all peaks in both spectra", method: "cosine" },
       { label: "Reverse cosine similarity", description: "Ignore unmatched query peaks in the query norm", method: "reverse_cosine" }
-    ], { title: "Similarity calculation method", ignoreFocusOut: true });
+    ], (item) => item.method === defaults.method), { title: "Similarity calculation method", ignoreFocusOut: true });
     if (!methodChoice || isDisposed()) return cancel();
-    const parameters = { method: methodChoice.method };
+    const parameters = { method: methodChoice.method, threads: defaults.threads };
 
     if (modeChoice.mode === "by_key") {
       for (const [index, dataset] of [first, second].entries()) {
@@ -586,7 +620,7 @@ class MSEntityViewerProvider {
       }
     } else {
       const threshold = await vscode.window.showInputBox({
-        title: "Library search: score threshold", value: "0.8", ignoreFocusOut: true,
+        title: "Library search: score threshold", value: String(defaults.threshold), ignoreFocusOut: true,
         prompt: "Only matches at or above this score are saved.",
         validateInput: (text) => {
           const number = Number(text);
@@ -598,23 +632,28 @@ class MSEntityViewerProvider {
       parameters.threshold = Number(threshold);
     }
 
-    for (const [name, title, value, integer] of [
-      ["bin_width", "m/z bin width", "0.01", false],
-      ["intensity_exponent", "Intensity exponent (0.5 = square root)", "1", false]
-    ]) {
+    const prompt = "Compare the entire selected datasets, including unsaved edits. Table filters do not limit this calculation.";
+    const askNumber = async (name, title, validate) => {
       const input = await vscode.window.showInputBox({
-        title: `Similarity: ${title}`, value, ignoreFocusOut: true,
-        prompt: "Compare the entire selected datasets, including unsaved edits. Table filters do not limit this calculation.",
+        title: `Similarity: ${title}`, value: String(defaults[name]), ignoreFocusOut: true, prompt,
         validateInput: (text) => {
           const number = Number(text);
-          return !Number.isFinite(number) || number <= 0 || (integer && !Number.isSafeInteger(number))
-            ? `Enter a positive ${integer ? "integer" : "finite number"}.` : undefined;
+          return !text.trim() || !Number.isFinite(number) ? "Enter a finite number." : validate(number);
         }
       });
-      if (input === undefined || isDisposed()) return cancel();
+      if (input === undefined || isDisposed()) return false;
       parameters[name] = Number(input);
-    }
-    const storageChoice = await vscode.window.showQuickPick([
+      return true;
+    };
+    // Peaks match within the Da tolerance or the ppm tolerance; 0 turns a rule off.
+    if (!await askNumber("mz_tolerance_da", "m/z tolerance in Da (0 = use ppm only)",
+      (number) => number < 0 ? "Enter 0 or a positive number." : undefined)) return cancel();
+    if (!await askNumber("mz_tolerance_ppm", "m/z tolerance in ppm (0 = use Da only; a peak matches within either)",
+      (number) => number < 0 ? "Enter 0 or a positive number."
+        : number === 0 && parameters.mz_tolerance_da === 0 ? "The Da tolerance is 0, so enter a positive ppm tolerance." : undefined)) return cancel();
+    if (!await askNumber("intensity_exponent", "Intensity exponent (0.5 = square root)",
+      (number) => number <= 0 ? "Enter a positive number." : undefined)) return cancel();
+    const storageChoice = await vscode.window.showQuickPick(defaultFirst([
       {
         label: "Include matched data",
         description: "Store each unique matched spectrum and its metadata once",
@@ -625,7 +664,7 @@ class MSEntityViewerProvider {
         description: "Store match indices and scores without spectrum data",
         include: false
       }
-    ], { title: "Similarity result contents", ignoreFocusOut: true });
+    ], (item) => item.include === defaults.include_matched_data), { title: "Similarity result contents", ignoreFocusOut: true });
     if (!storageChoice || isDisposed()) return cancel();
     parameters.include_matched_data = storageChoice.include;
 
@@ -682,6 +721,7 @@ class MSEntityViewerProvider {
           });
         } else if (message?.type === "ready") {
           entry.ready = true;
+          panel.webview.postMessage({ type: "comparison-settings", ...configuredComparisonSettings(loadHost(this.context)) });
           if (entry.latest && entry.comparisonBottom) {
             panel.webview.postMessage({
               type: "spectrum-comparison", top: entry.latest,

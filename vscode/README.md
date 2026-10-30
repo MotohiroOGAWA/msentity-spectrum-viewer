@@ -101,7 +101,9 @@ independently: new selections replace the unpinned side, and neither side
 changes while both are pinned. The lower spectrum can also be removed. While
 comparing, similarity is calculated automatically with a selectable dot
 product, reverse dot product, modified dot product, or BONANZA score. Fragment
-matching tolerance is editable in Da and defaults to ±0.05 Da. Modified dot
+matching tolerance is editable in Da and defaults to ±0.05 Da (the initial
+method and tolerance are the `msentitySpectrumViewer.spectrumComparison`
+settings). Modified dot
 product and BONANZA also consider precursor-mass-shifted neutral-loss matches.
 The score and matched-peak count update when the method or tolerance changes.
 The metadata area below the plot shows separate **Upper Metadata** and **Lower
@@ -147,8 +149,12 @@ search** or **Match by metadata key**. A library search compares every spectrum
 in the query dataset with every spectrum in a reference library. The reference
 can be an entry already loaded with **Add dataset…**, or an MSDS, MSP, MGF, TSV,
 or CSV file selected for that calculation. Choose cosine or reverse cosine,
-set the score threshold (default `0.8`), the m/z bin width, and the intensity
-exponent before saving the result as **`.mssim`**. Scores are calculated by
+set the score threshold (default `0.8`), the m/z tolerance in Da (default
+`0.01`) and in ppm (default `0`, off), and the intensity exponent before saving
+the result as **`.mssim`**. Two peaks match when they are within the Da
+tolerance or the ppm tolerance (0 turns either rule off); each peak matches at
+most one peak, the closest one. The initial choices come from the
+`msentitySpectrumViewer.similarity` settings. Scores are calculated by
 [msentity-similarity](https://github.com/MotohiroOGAWA/msentity-similarity)
 on all CPU cores.
 
@@ -265,6 +271,14 @@ discards assignments that have not been exported.
 - `msentitySpectrumViewer.structureSmilesColumn`, `showStructureColumn`,
   `structurePreviewWidth`, `structurePreviewHeight`: structure previews.
 <!-- rdkit:end -->
+- `msentitySpectrumViewer.similarity.*`: defaults of **Calculate similarity…** —
+  `method` (`cosine`), `threshold` (`0.8`), `mzToleranceDa` (`0.01`),
+  `mzTolerancePpm` (`0`), `intensityExponent` (`1`), `includeMatchedData`
+  (`true`), `threads` (`0` = all cores). Peaks match within `mzToleranceDa` Da
+  or `mzTolerancePpm` ppm; set one to `0` to use only the other.
+- `msentitySpectrumViewer.spectrumComparison.method` (`dot`, `reverse`,
+  `modified`, `bonanza`) and `toleranceDa` (`0.05`): initial score settings
+  when two spectra are compared.
 - `msentitySpectrumViewer.backendPath`: use another `msentity-viewer-backend`
   executable (development builds).
 

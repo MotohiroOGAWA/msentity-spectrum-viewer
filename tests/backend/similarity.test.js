@@ -160,3 +160,37 @@ test("histogram includes 1.0 and the viewer does not need the sources", { skip }
     tmp.cleanup();
   }
 });
+
+test("peaks match within the m/z tolerance in Da or ppm", { skip }, () => {
+  const tmp = tempDir();
+  try {
+    // 100 vs 100.004: 0.004 Da, 40 ppm of the mean m/z.
+    const first = tmp.file("first.tsv", "SpecID\tPeak\na\t100,1\n");
+    const second = tmp.file("second.tsv", "SpecID\tPeak\na\t100.004,1\n");
+    let run = 0;
+    const calculate = (parameters) => {
+      const output = tmp.file(`result${run++}.mssim`);
+      const messages = runBackend("dataset", first, [
+        { type: "add-dataset", path: second },
+        { type: "calculate-similarity", dataset1: first, dataset2: second, path: output, parameters },
+      ]);
+      const failure = ofType(messages, "similarity-error")[0];
+      if (failure) return failure.message;
+      const page = ofType(resultPage(output, [{ type: "page" }]), "similarity-page")[0].value;
+      return { score: page.rows[0].cosine_similarity, parameters: page.metadata.parameters };
+    };
+    assert.equal(calculate({ mz_tolerance_da: 0.001 }).score, 0);
+    const either = calculate({ mz_tolerance_da: 0.001, mz_tolerance_ppm: 50 });
+    assert.equal(either.score, 1);
+    assert.equal(either.parameters.mz_tolerance_da, 0.001);
+    assert.equal(either.parameters.mz_tolerance_ppm, 50);
+    assert.equal(calculate({ mz_tolerance_da: 0, mz_tolerance_ppm: 30 }).score, 0);
+    // bin_width is the former name of mz_tolerance_da.
+    const former = calculate({ bin_width: 0.01 });
+    assert.equal(former.score, 1);
+    assert.equal(former.parameters.mz_tolerance_da, 0.01);
+    assert.match(calculate({ mz_tolerance_da: 0 }), /mz_tolerance_da and mz_tolerance_ppm must be positive/);
+  } finally {
+    tmp.cleanup();
+  }
+});

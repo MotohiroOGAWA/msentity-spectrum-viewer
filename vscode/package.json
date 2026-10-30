@@ -163,6 +163,63 @@
           "default": "",
           "description": "Optional path for the MSP/MGF error log. No log is written when the error log level is 'none'."
         },
+        "msentitySpectrumViewer.similarity.method": {
+          "type": "string",
+          "enum": ["cosine", "reverse_cosine"],
+          "enumDescriptions": ["Normalize all peaks in both spectra", "Ignore unmatched query peaks in the query norm"],
+          "default": "cosine",
+          "description": "Default method of Calculate Similarity."
+        },
+        "msentitySpectrumViewer.similarity.threshold": {
+          "type": "number",
+          "default": 0.8,
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Default score threshold of a library search: only matches at or above it are saved."
+        },
+        "msentitySpectrumViewer.similarity.mzToleranceDa": {
+          "type": "number",
+          "default": 0.01,
+          "minimum": 0,
+          "description": "Default m/z tolerance in Da: two peaks match when |m/z1 − m/z2| is at most this value. 0 turns the Da rule off (ppm only)."
+        },
+        "msentitySpectrumViewer.similarity.mzTolerancePpm": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "description": "Default m/z tolerance in ppm of the mean m/z of the two peaks. Peaks match when either the Da or the ppm rule holds; 0 turns the ppm rule off (Da only)."
+        },
+        "msentitySpectrumViewer.similarity.intensityExponent": {
+          "type": "number",
+          "default": 1,
+          "exclusiveMinimum": 0,
+          "description": "Default intensity exponent: intensities are raised to this power before scoring (0.5 = square root)."
+        },
+        "msentitySpectrumViewer.similarity.includeMatchedData": {
+          "type": "boolean",
+          "default": true,
+          "description": "Store the matched spectra and their metadata in the result by default (otherwise a lightweight result with indices and scores only)."
+        },
+        "msentitySpectrumViewer.similarity.threads": {
+          "type": "integer",
+          "default": 0,
+          "minimum": 0,
+          "description": "Worker threads of a similarity calculation; 0 uses all hardware threads."
+        },
+        "msentitySpectrumViewer.spectrumComparison.method": {
+          "type": "string",
+          "enum": ["dot", "reverse", "modified", "bonanza"],
+          "enumDescriptions": ["Dot product", "Reverse dot product", "Modified dot product (also matches precursor-shifted peaks)", "BONANZA score"],
+          "default": "dot",
+          "description": "Initial score method when two spectra are compared in the Mass Spectrum view."
+        },
+        "msentitySpectrumViewer.spectrumComparison.toleranceDa": {
+          "type": "number",
+          "default": 0.05,
+          "exclusiveMinimum": 0,
+          "maximum": 10,
+          "description": "Initial fragment matching tolerance (± Da) when two spectra are compared in the Mass Spectrum view."
+        },
         "msentitySpectrumViewer.spectrumFloatingWindow": {
           "type": "boolean",
           "default": true,

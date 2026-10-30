@@ -122,9 +122,16 @@ Conditions on unknown columns, or with an empty value, are ignored.
  "parameters": {"method": "cosine",        // or "reverse_cosine"
                 "threshold": 0.8,           // library_search
                 "key1": "SpecID", "key2": "SpecID",   // by_key
-                "bin_width": 0.01, "intensity_exponent": 1.0, "threads": 0,
+                "mz_tolerance_da": 0.01,    // peaks match within this many Da (0 = off)
+                "mz_tolerance_ppm": 0,      // ... or within this many ppm (0 = off)
+                "intensity_exponent": 1.0, "threads": 0,
                 "include_matched_data": true}}        // default: true for library_search, false for by_key
 ```
+
+Every parameter is optional. `bin_width` is accepted as the former name of
+`mz_tolerance_da`. A host can take its defaults from `similaritySettings()` of
+the host library (`host/similarity.js`), which applies the host's own settings
+over `SIMILARITY_DEFAULTS` and validates them.
 
 ## Similarity result viewer (`similarity` mode, UI `ui/similarity.js`)
 
@@ -166,6 +173,10 @@ The panel has no backend of its own. The host sends it:
   `title`, `datasetId`, `datasetName`, `datasetPath` (the dataset viewer posts
   this payload as `open-spectrum`);
 * `{"type": "spectrum-comparison", "top": {...}, "bottom": {...}, "method": "cosine"}`;
+* `{"type": "comparison-settings", "method": "dot", "tolerance_da": 0.05}` —
+  optional; the initial score method (`dot`, `reverse`, `modified`, `bonanza`)
+  and the ± Da matching tolerance of a comparison. Send it before the spectra;
+  `comparisonSettings()` of the host library gives validated values;
 * `peak-record` and `peak-columns-updated` from the dataset backend.
 
 It posts `ready`, `add-peak-column`, `get-peak-record`, `edit-peak-cell`,

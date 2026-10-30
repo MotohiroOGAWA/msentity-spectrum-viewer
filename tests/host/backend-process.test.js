@@ -48,9 +48,10 @@ test("messages, logs, and exit of a backend process", { skip }, async () => {
 
 test("passes loading options to the backend", { skip }, async () => {
   const tmp = tempDir();
+  let backend;
   try {
     const file = tmp.file("duplicate.msp", "Name: first\nNAME: alias\nNumPeaks: 1\n100 50\n\n");
-    const backend = new BackendProcess({
+    backend = new BackendProcess({
       executable: BACKEND, mode: "dataset", file,
       loadOptions: { canonicalizeColumns: true, allowDuplicateColumns: true, normalizeIntensity: true }
     });
@@ -60,11 +61,11 @@ test("passes loading options to the backend", { skip }, async () => {
     backend.start();
     backend.send({ type: "page", page: 0 });
     const value = await page;
-    assert.equal(value.rows[0].Name, "first");
-    assert.equal(value.rows[0].Name1, "alias");
+    assert.equal(value.rows[0].Name, '"first","alias"');
+    assert.equal(Object.hasOwn(value.rows[0], "Name1"), false);
     assert.deepEqual(value.spectra[0].intensity, [1]);
-    backend.stop();
   } finally {
+    backend?.stop();
     tmp.cleanup();
   }
 });

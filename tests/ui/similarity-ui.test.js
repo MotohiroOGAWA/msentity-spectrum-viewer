@@ -11,7 +11,7 @@ if (!process.env.WIZARD_ONLY) {
   try { chromium = require("playwright").chromium; } catch { chromium = null; }
 }
 const root = path.resolve(__dirname, "../..");
-const { findBackendExecutable } = require("../../host");
+const { findBackendExecutable, similaritySettings } = require("../../host");
 const backendExecutable = findBackendExecutable({ roots: [root] });
 
 async function wizardTests() {
@@ -38,7 +38,9 @@ async function wizardTests() {
       },
       showInputBox: async (options) => {
         assert.ok(options.validateInput("NaN"));
-        if (!options.title.includes("threshold")) assert.ok(options.validateInput("0"));
+        assert.ok(options.validateInput("-1"));
+        if (options.title.includes("exponent")) assert.ok(options.validateInput("0"));
+        if (options.title.includes("in Da")) assert.equal(options.validateInput("0"), undefined);
         assert.equal(options.validateInput(options.value), undefined);
         inputs.push(options); return options.value;
       },
@@ -52,18 +54,34 @@ async function wizardTests() {
     "\nmodule.exports.Provider = MSEntityViewerProvider;", context);
   const provider = new context.module.exports.Provider({ extensionUri: "/extension" });
   const datasets = [0, 1, 2].map((i) => ({ id: `dataset${i}`, name: `dataset${i}`, columns: ["Name", "SpecID"] }));
+  let defaults = similaritySettings();
   const run = (items, active = "dataset0") => provider.configureSimilarity(
     items, active, { fsPath: "/tmp/source.msds" },
-    (m) => requests.push(m), (m) => messages.push(m), () => false
+    (m) => requests.push(m), (m) => messages.push(m), () => false, defaults
   );
   await run(datasets.slice(0, 2));
   assert.equal(choices.length, 5);
-  assert.equal(inputs.length, 3);   // threshold, bin width, intensity exponent
+  assert.equal(inputs.length, 4);   // threshold, m/z tolerance in Da and ppm, intensity exponent
+  assert.equal(requests[0].parameters.method, "cosine");
+  assert.equal(requests[0].parameters.mz_tolerance_da, 0.01);
+  assert.equal(requests[0].parameters.mz_tolerance_ppm, 0);
+  assert.equal(requests[0].parameters.intensity_exponent, 1);
   assert.equal(requests[0].mode, "library_search");
   assert.equal(requests[0].dataset1, "dataset0");
   assert.equal(requests[0].dataset2, "dataset1");
   assert.equal(requests[0].parameters.threshold, 0.8);
   assert.equal(requests[0].parameters.include_matched_data, true);
+
+  // Configured defaults are the initial values; the default method is listed first.
+  defaults = similaritySettings({ method: "reverse_cosine", threshold: 0.6, mz_tolerance_da: 0,
+    mz_tolerance_ppm: 10, include_matched_data: false, threads: 2 });
+  inputs = []; requests = [];
+  await run(datasets.slice(0, 2));
+  assert.deepEqual(JSON.parse(JSON.stringify(requests[0].parameters)), { method: "reverse_cosine", threads: 2,
+    threshold: 0.6, mz_tolerance_da: 0, mz_tolerance_ppm: 10, intensity_exponent: 1, include_matched_data: false });
+  const ppmInput = inputs.find((options) => options.title.includes("in ppm"));
+  assert.ok(ppmInput.validateInput("0"));   // Da is 0 as well: no tolerance left
+  defaults = similaritySettings();
 
   choices = []; inputs = []; requests = [];
   selectedMode = "by_key";

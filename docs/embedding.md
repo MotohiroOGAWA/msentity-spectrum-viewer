@@ -132,6 +132,22 @@ webview.onMessage((message) => {                    // from ui/viewer.js
 });
 ```
 
+Default calculation settings come from the host library as well, so every
+host can offer its own defaults (the VS Code extension maps its settings to
+these):
+
+```js
+const { similaritySettings, comparisonSettings } = require("./third_party/msentity-spectrum-viewer/host");
+
+// Parameters of calculate-similarity: your settings over SIMILARITY_DEFAULTS, validated.
+const defaults = similaritySettings({ mz_tolerance_da: 0, mz_tolerance_ppm: 10, threshold: 0.7 });
+backend.send({ type: "calculate-similarity", mode: "library_search", dataset1, dataset2,
+               path: "/data/result.mssim", parameters: defaults });
+
+// Initial method and tolerance of the score in ui/spectrum.js.
+spectrumWebview.postMessage({ type: "comparison-settings", ...comparisonSettings({ tolerance_da: 0.02 }) });
+```
+
 `DatasetSession` handles the chemistry part of the protocol: it turns SMARTS
 filters into row-id filters with RDKit and answers structure requests. Pass
 `null` instead of `chemistry` to leave these features off; RDKit is the

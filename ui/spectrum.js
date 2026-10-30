@@ -552,6 +552,14 @@
     renderSpectrum();
   }
 
+  // Default score method and tolerance from the host (comparison-settings).
+  function applyComparisonSettings(settings) {
+    if (["dot", "reverse", "modified", "bonanza"].includes(settings?.method)) similarityMethod = settings.method;
+    const tolerance = Number(settings?.tolerance_da);
+    if (Number.isFinite(tolerance) && tolerance > 0) similarityTolerance = Math.min(10, tolerance);
+    if (comparison.top) renderSpectrum(true);
+  }
+
   function receiveComparison(top, bottom, method) {
     comparison.top = top;
     comparison.bottom = bottom;
@@ -959,7 +967,7 @@
     } else if (event.data?.type === "spectrum") receiveSpectrum(event.data.payload);
     else if (event.data?.type === "spectrum-comparison") {
       receiveComparison(event.data.top, event.data.bottom, event.data.method);
-    }
+    } else if (event.data?.type === "comparison-settings") applyComparisonSettings(event.data);
   });
 
   document.addEventListener("click", event => {
