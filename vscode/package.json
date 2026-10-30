@@ -125,7 +125,7 @@
         "msentitySpectrumViewer.loading.allowDuplicateColumns": {
           "type": "boolean",
           "default": false,
-          "description": "Rename duplicate MSP/MGF metadata fields (Name, Name1, ...) instead of discarding the record. Applies when a file is opened."
+          "description": "Combine duplicate MSP/MGF metadata fields instead of discarding the record. One non-empty value is unchanged; multiple values are stored as always-quoted CSV fields."
         },
         "msentitySpectrumViewer.loading.canonicalizeColumns": {
           "type": "boolean",

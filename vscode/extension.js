@@ -51,7 +51,7 @@ function configuredLoadOptions() {
 
 async function chooseLoadOptions(current) {
   const choices = [
-    ["allowDuplicateColumns", "Allow duplicate columns", "Rename duplicate MSP/MGF fields instead of discarding the record"],
+    ["allowDuplicateColumns", "Allow duplicate columns", "Combine duplicate MSP/MGF values as quoted CSV instead of discarding the record"],
     ["canonicalizeColumns", "Canonicalize columns", "Convert source field names to canonical msentity names"],
     ["canonicalizeAdductTypes", "Canonicalize adduct types", "Normalize values such as [M+H]1+ to [M+H]+"],
     ["normalizeIntensity", "Normalize intensity", "Scale each spectrum so its base peak is 1"],
