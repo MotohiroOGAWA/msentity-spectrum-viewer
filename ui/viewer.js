@@ -59,7 +59,8 @@
   let columnMenuOpen = false;
   let columnMenuScrollTop = 0;
   let filterMenuOpen = false;
-  let filters = [];
+  // A top-level AND group preserves the former flat-filter semantics.
+  let filters = { logic: "and", children: [] };
   let rowSort = [];
   let filterSequence = 0;
   let selectedSpectrumIndex = null;
@@ -92,6 +93,14 @@
   const rowOffset = () => Number.isInteger(value?.row_offset) ? value.row_offset : page() * pageSize();
   const totalRows = () => Number.isInteger(value?.total_rows) ? value.total_rows : rows().length;
   const pageCount = () => Number.isInteger(value?.total_pages) ? value.total_pages : Math.max(1, Math.ceil(totalRows() / pageSize()));
+  const filterCount = group => (group?.children || []).reduce((n, child) => n + (child.children ? filterCount(child) : 1), 0);
+  const findFilter = (group, id) => {
+    for (const child of group.children || []) {
+      if (child.id === id) return { node: child, parent: group };
+      if (child.children) { const found = findFilter(child, id); if (found) return found; }
+    }
+    return null;
+  };
 
   function ensureColumns() {
     const cols = columns();
@@ -192,19 +201,23 @@
         ${cols.map((c) => `<div class="column-option"><button class="column-toggle" data-column="${esc(c)}"><span class="checkmark ${selectedColumns.includes(c) ? "checked" : ""}">✓</span><span>${esc(c)}</span></button>${selectedColumns.includes(c) ? `<span class="column-order"><button data-move-column="${esc(c)}" data-offset="-1" title="Move left" ${selectedColumns.indexOf(c) === 0 ? "disabled" : ""}>↑</button><button data-move-column="${esc(c)}" data-offset="1" title="Move right" ${selectedColumns.indexOf(c) === selectedColumns.length - 1 ? "disabled" : ""}>↓</button></span>` : ""}</div>`).join("")}
       </div>` : "";
 
-    const filterMenu = filterMenuOpen ? `
-      <div class="filter-menu" id="filter-menu">
-        <div class="filter-title"><strong>Filters</strong><span class="filter-add-actions"><button id="add-filter" title="Add column filter">+ Column filter</button><button id="add-peak-filter" title="Add peak filter">+ Peak filter</button></span></div>
-        ${filters.length ? filters.map((filter) => { const spectral = ["spectrum_peak", "neutral_loss"].includes(filter.operator); return `<div class="filter-row ${spectral ? "spectrum-filter-row" : ""}" data-filter-id="${filter.id}">
+    const renderFilterGroup = (group, root = false) => `<fieldset class="filter-group" data-group-id="${group.id || 0}"><legend>${root ? "Match" : "Group"}
+      <select data-group-logic aria-label="Group logic"><option value="and" ${group.logic !== "or" ? "selected" : ""}>AND</option><option value="or" ${group.logic === "or" ? "selected" : ""}>OR</option></select>
+      ${root ? "" : '<button class="remove-group" title="Remove group">×</button>'}</legend>
+      ${(group.children || []).map(filter => filter.children ? renderFilterGroup(filter) : (() => { const spectral = ["spectrum_peak", "neutral_loss"].includes(filter.operator); return `<div class="filter-row ${spectral ? "spectrum-filter-row" : ""}" data-filter-id="${filter.id}">
           ${spectral ? `<fieldset class="peak-kind"><legend>Peak type</legend><label><input data-filter-field="operator" name="peak-type-${filter.id}" type="radio" value="spectrum_peak" ${filter.operator === "spectrum_peak" ? "checked" : ""}>Product ion</label><label><input data-filter-field="operator" name="peak-type-${filter.id}" type="radio" value="neutral_loss" ${filter.operator === "neutral_loss" ? "checked" : ""}>Neutral loss</label></fieldset><label class="mz-tolerance"><span>m/z</span><input data-filter-field="mz" type="number" step="any" value="${esc(filter.mz)}" placeholder="123.45" aria-label="m/z"><span>±</span><input data-filter-field="tolerance" type="number" min="0" step="any" value="${esc(filter.tolerance)}" placeholder="0.01" aria-label="Tolerance"><select data-filter-field="tolerance_unit" aria-label="Tolerance unit"><option value="Da" ${filter.tolerance_unit !== "ppm" ? "selected" : ""}>Da</option><option value="ppm" ${filter.tolerance_unit === "ppm" ? "selected" : ""}>ppm</option></select></label><label class="intensity-filter"><span>Min intensity</span><input data-intensity-slider type="range" min="0" max="1" step="0.01" value="${esc(filter.intensity ?? 0)}" aria-label="Minimum normalized intensity slider"><input data-filter-field="intensity" type="number" min="0" max="1" step="0.01" value="${esc(filter.intensity ?? 0)}" aria-label="Minimum normalized intensity"></label>` : `<select data-filter-target aria-label="Column">${cols.map((c) => `<option value="${esc(c)}" ${c === filter.column ? "selected" : ""}>${esc(c)}</option>`).join("")}</select><select data-filter-field="operator" aria-label="Operator">${[
             ["text_eq", "= (text)"], ["numeric_eq", "= (number)"], ["!=", "!= (text)"], ["contains", "contains"],
-            [">", "> (number)"], [">=", ">= (number)"], ["<", "< (number)"], ["<=", "<= (number)"],
+            [">", "> (number)"], [">=", ">= (number)"], ["<", "< (number)"], ["<=", "<= (number)"], ["is_missing", "is missing"], ["is_not_missing", "is not missing"],
             ...(chemistryCapabilities.smarts_filter ? [["smarts", "SMARTS substructure"]] : [])
           ].map(([op, label]) => `<option value="${esc(op)}" ${op === filter.operator ? "selected" : ""}>${esc(label)}</option>`).join("")}</select>
           <input data-filter-field="value" value="${esc(filter.value)}" placeholder="Value" />`}
-          <button class="remove-filter" title="Remove filter">×</button>
-        </div>`; }).join("") : `<div class="filter-empty">Press + to add a condition.</div>`}
-        <div class="filter-actions"><button id="clear-filters" class="secondary-button" ${filters.length ? "" : "disabled"}>Clear</button><button id="apply-filters">Apply</button></div>
+          <button class="remove-filter" title="Remove filter">×</button></div>`; })()).join("")}
+      <div class="filter-add-actions"><button ${root ? 'id="add-filter"' : ""} data-add-filter>+ Column filter</button><button ${root ? 'id="add-peak-filter"' : ""} data-add-peak-filter>+ Peak filter</button><button data-add-group>+ Group</button></div>
+    </fieldset>`;
+    const filterMenu = filterMenuOpen ? `
+      <div class="filter-menu" id="filter-menu">
+        <div class="filter-title"><strong>Filters</strong></div>${renderFilterGroup(filters, true)}
+        <div class="filter-actions"><button id="clear-filters" class="secondary-button" ${filterCount(filters) ? "" : "disabled"}>Clear</button><button id="apply-filters">Apply</button></div>
       </div>` : "";
 
     app.innerHTML = `
@@ -217,6 +230,7 @@
               <div class="dataset-menu-actions">
                 <button class="secondary-button dataset-primary" id="add-dataset" title="Add dataset" aria-label="Add dataset">${toolbarIcon("add")}</button>
                 <button class="secondary-button" id="remove-dataset" title="Remove active dataset" aria-label="Remove dataset" ${!activeDatasetId || loadingPage || metadataBusy ? "disabled" : ""}>${toolbarIcon("remove")}</button>
+                <button class="secondary-button" id="merge-datasets" title="Merge datasets" aria-label="Merge datasets" ${datasetOptions.length < 2 ? "disabled" : ""}>Merge</button>
               </div>
               <div class="dataset-options" role="listbox" aria-label="Datasets">
                 ${datasetOptions.map(d => `<button class="dataset-option" role="option" aria-selected="${d.id === activeDatasetId}" data-dataset-id="${esc(d.id)}"><span>${esc(d.name)}</span>${d.id === activeDatasetId ? '<span aria-hidden="true">✓</span>' : ''}</button>`).join("")}
@@ -225,7 +239,7 @@
           </div>
           <div class="toolbar-group view-actions">
             <button class="secondary-button" id="reload-button" title="Reload dataset from disk">${toolbarIcon("reload")}<span>Reload</span></button>
-            <div class="filters"><button class="secondary-button" id="filter-button" aria-expanded="${filterMenuOpen}" aria-controls="filter-menu">${toolbarIcon("filter")}<span class="menu-action-label">Filter</span>${filters.length ? ` <span class="filter-count">${filters.length}</span>` : ""}</button>${filterMenu}</div>
+            <div class="filters"><button class="secondary-button" id="filter-button" aria-expanded="${filterMenuOpen}" aria-controls="filter-menu">${toolbarIcon("filter")}<span class="menu-action-label">Filter</span>${filterCount(filters) ? ` <span class="filter-count">${filterCount(filters)}</span>` : ""}</button>${filterMenu}</div>
             <button class="secondary-button" id="export-button" ${exporting || loadingPage || metadataBusy ? "disabled" : ""} title="Export dataset (Ctrl+S)">${toolbarIcon("export")}<span class="menu-action-label">${exporting ? `Exporting…${exportProgress == null ? "" : ` ${exportProgress.toFixed(1)}%`}` : "Export"}</span></button>
           </div>
           <div class="more-actions columns">
@@ -331,11 +345,21 @@
     document.querySelectorAll("[data-column]").forEach((el) => el.addEventListener("click", () => toggleColumn(el.dataset.column)));
     document.querySelectorAll("[data-move-column]").forEach((el) => el.addEventListener("click", () => moveColumn(el.dataset.moveColumn, Number(el.dataset.offset))));
     document.getElementById("filter-button")?.addEventListener("click", (e) => { e.stopPropagation(); datasetMenuOpen = false; moreActionsOpen = false; filterMenuOpen = !filterMenuOpen; columnMenuOpen = false; render();
-      document.getElementById("add-filter")?.focus?.(); });
-    document.getElementById("add-filter")?.addEventListener("click", () => { filters.push({ id: ++filterSequence, column: cols[0] || "", operator: "text_eq", value: "" }); render(); });
-    document.getElementById("add-peak-filter")?.addEventListener("click", () => { filters.push({ id: ++filterSequence, operator: "spectrum_peak", mz: "", tolerance: "", tolerance_unit: "Da", intensity: "0" }); render(); });
+      document.querySelector("[data-add-filter]")?.focus?.(); });
+    document.getElementById("add-filter")?.addEventListener("click", () => { filters.children.push({ id: ++filterSequence, column: cols[0] || "", operator: "text_eq", value: "" }); render(); });
+    document.getElementById("add-peak-filter")?.addEventListener("click", () => { filters.children.push({ id: ++filterSequence, operator: "spectrum_peak", mz: "", tolerance: "", tolerance_unit: "Da", intensity: "0" }); render(); });
+    document.querySelectorAll("[data-group-id]").forEach(fieldset => {
+      const id = Number(fieldset.dataset.groupId);
+      const group = id === 0 ? filters : findFilter(filters, id)?.node;
+      fieldset.querySelector(":scope > legend [data-group-logic]")?.addEventListener("change", event => { group.logic = event.target.value; });
+      if (id !== 0) fieldset.querySelector(":scope > .filter-add-actions [data-add-filter]")?.addEventListener("click", () => { group.children.push({ id: ++filterSequence, column: cols[0] || "", operator: "text_eq", value: "" }); render(); });
+      if (id !== 0) fieldset.querySelector(":scope > .filter-add-actions [data-add-peak-filter]")?.addEventListener("click", () => { group.children.push({ id: ++filterSequence, operator: "spectrum_peak", mz: "", tolerance: "", tolerance_unit: "Da", intensity: "0" }); render(); });
+      fieldset.querySelector(":scope > .filter-add-actions [data-add-group]")?.addEventListener("click", () => { group.children.push({ id: ++filterSequence, logic: "and", children: [] }); render(); });
+      fieldset.querySelector(":scope > legend .remove-group")?.addEventListener("click", () => { const found = findFilter(filters, id); if (found) found.parent.children = found.parent.children.filter(item => item !== found.node); render(); });
+    });
     document.querySelectorAll("[data-filter-id]").forEach((row) => {
-      const filter = filters.find((item) => item.id === Number(row.dataset.filterId));
+      const found = findFilter(filters, Number(row.dataset.filterId));
+      const filter = found.node;
       row.querySelector("[data-filter-target]")?.addEventListener("change", (event) => {
         filter.column = event.target.value;
       });
@@ -344,9 +368,9 @@
       const intensityInput = row.querySelector('[data-filter-field="intensity"]');
       slider?.addEventListener("input", () => { filter.intensity = slider.value; intensityInput.value = slider.value; });
       intensityInput?.addEventListener("input", () => { slider.value = intensityInput.value; });
-      row.querySelector(".remove-filter")?.addEventListener("click", () => { filters = filters.filter((item) => item !== filter); render(); });
+      row.querySelector(".remove-filter")?.addEventListener("click", () => { found.parent.children = found.parent.children.filter(item => item !== filter); render(); });
     });
-    document.getElementById("clear-filters")?.addEventListener("click", () => { filters = []; refreshView(); });
+    document.getElementById("clear-filters")?.addEventListener("click", () => { filters = { logic: "and", children: [] }; refreshView(); });
     document.getElementById("apply-filters")?.addEventListener("click", refreshView);
     document.querySelectorAll("[data-sort-column]").forEach((el) => el.addEventListener("click", () => {
       const column = el.dataset.sortColumn;
@@ -372,7 +396,7 @@
       const savedPage = datasetPages.get(activeDatasetId) ?? 0;
       loadingPage = true;
       selectedSpectrumIndex = null;
-      filters = [];
+      filters = { logic: "and", children: [] };
       rowSort = [];
       selectedColumns = [];
       knownColumnsKey = "";
@@ -396,9 +420,10 @@
       moreActionsOpen = false; render(); vscode.postMessage({ type: "open-settings" });
     });
     document.getElementById("loading-options-button")?.addEventListener("click", () => {
-      moreActionsOpen = false; render(); vscode.postMessage({ type: "change-load-options" });
+      moreActionsOpen = false; render(); vscode.postMessage({ type: "change-load-options", datasetId: activeDatasetId, filters, sort: rowSort });
     });
     document.getElementById("add-dataset")?.addEventListener("click", () => { datasetMenuOpen = false; render(); vscode.postMessage({ type: "add-dataset" }); });
+    document.getElementById("merge-datasets")?.addEventListener("click", () => { datasetMenuOpen = false; render(); vscode.postMessage({ type: "choose-merge-datasets", datasets: datasetOptions }); });
     document.getElementById("assign-spec-id-button")?.addEventListener("click", () => {
       moreActionsOpen = false; assigningSpecId = true;
       render();
@@ -480,7 +505,7 @@
         activeDatasetId = dataset.id;
         structureCounts = null;
         calculatingStructureCounts = false;
-        filters = [];
+        filters = { logic: "and", children: [] };
         rowSort = [];
         selectedColumns = [];
         knownColumnsKey = "";
@@ -498,7 +523,7 @@
         activeDatasetId = datasetOptions[0]?.id || "";
         structureCounts = null;
         calculatingStructureCounts = false;
-        filters = []; rowSort = []; selectedColumns = []; knownColumnsKey = "";
+        filters = { logic: "and", children: [] }; rowSort = []; selectedColumns = []; knownColumnsKey = "";
         metadataDraft = null; metadataOpen = false; datasetMenuOpen = false;
         moreActionsOpen = false; columnMenuOpen = false; filterMenuOpen = false;
         selectedSpectrumIndex = null;

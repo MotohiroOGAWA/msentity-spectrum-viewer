@@ -69,25 +69,24 @@ class DatasetSession {
 
   /** Replace SMARTS conditions with the row ids of the matching spectra. */
   async resolveFilters(datasetId, filters) {
-    if (!Array.isArray(filters) || !filters.some((f) => f && f.operator === "smarts")) return filters;
+    const containsSmarts = node => Array.isArray(node)
+      ? node.some(containsSmarts)
+      : Boolean(node && (node.operator === "smarts" || (Array.isArray(node.children) && node.children.some(containsSmarts))));
+    if (!containsSmarts(filters)) return filters;
     const capabilities = await this.capabilities();
-    const resolved = [];
-    for (const condition of filters) {
-      if (!condition || condition.operator !== "smarts" || condition.value == null || String(condition.value) === "") {
-        resolved.push(condition);
-        continue;
+    const resolve = async condition => {
+      if (condition && Array.isArray(condition.children)) {
+        return { ...condition, children: (await Promise.all(condition.children.map(resolve))).filter(Boolean) };
       }
+      if (!condition || condition.operator !== "smarts" || condition.value == null || String(condition.value) === "") return condition;
       if (!capabilities.smarts_filter) throw new Error("SMARTS filtering requires optional RDKit support");
-      const reply = await this.backend.request({
-        type: "column-values", dataset_id: datasetId, column: condition.column,
-      });
-      if (reply.error) continue;  // unknown column: ignored like other filters
-      const matches = await this.chemistry.call("smarts-match", {
-        values: reply.values, pattern: String(condition.value),
-      });
-      resolved.push({ operator: "row_ids", row_ids: reply.row_ids.filter((_, i) => matches[i]) });
-    }
-    return resolved;
+      const reply = await this.backend.request({ type: "column-values", dataset_id: datasetId, column: condition.column });
+      if (reply.error) return null; // unknown column: ignored for legacy compatibility
+      const matches = await this.chemistry.call("smarts-match", { values: reply.values, pattern: String(condition.value) });
+      return { operator: "row_ids", row_ids: reply.row_ids.filter((_, i) => matches[i]) };
+    };
+    if (Array.isArray(filters)) return (await Promise.all(filters.map(resolve))).filter(Boolean);
+    return filters && typeof filters === "object" ? resolve(filters) : filters;
   }
 
   async structureCounts(request, filters) {

@@ -96,7 +96,11 @@ Missing values, NaN, and infinities are `null`.
 
 #### Filters and sorting
 
-`filters` is a list of conditions that must all hold; `sort` is one
+`filters` is either the legacy list of conditions (an AND group), or a recursive
+`{"logic":"and"|"or","children":[condition-or-group,...]}` object. Empty AND
+matches all rows and empty OR matches none. SMARTS leaves are resolved to
+`row_ids` in place by the Host; dataset evaluation is delegated to msentity
+Core. `sort` is one
 `{"column", "direction": "asc"|"desc"}` or a list in priority order (stable;
 missing values last).
 
@@ -110,6 +114,13 @@ missing values last).
 | `row_ids` | `row_ids` | the listed spectra |
 
 Conditions on unknown columns, or with an empty value, are ignored.
+
+`reload` may include `load_options`. A file entry is reread with those options;
+omitting them retains its previous options. A memory-only merged entry rebuilds
+from immutable source snapshots. `merge-datasets` accepts `dataset_ids` (two or
+more) and optional `name`, then emits the normal `dataset-added` and
+`dataset-page` messages. Merge uses complete registered datasets, not their
+display filter/sort views.
 
 #### `calculate-similarity`
 

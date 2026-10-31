@@ -45,6 +45,14 @@ button:disabled { cursor: default; opacity: .5; }
 .column-order button { width: 25px; height: 25px; border: 0; border-radius: 3px; color: inherit; background: transparent; }
 .column-order button:hover { background: var(--row-hover); }
 .filter-menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; width: min(720px, 80vw); padding: 10px; background: var(--vscode-menu-background, var(--panel)); color: var(--vscode-menu-foreground, var(--text)); border: 1px solid var(--vscode-menu-border, var(--border)); border-radius: 6px; box-shadow: 0 8px 24px #0006; }
+.filter-group { margin: 8px 0 0; padding: 8px; color: inherit; background: color-mix(in srgb, var(--vscode-menu-background, var(--panel)) 92%, var(--vscode-foreground, var(--text))); border: 1px solid var(--vscode-menu-border, var(--border)); border-radius: 5px; }
+.filter-group .filter-group { margin-left: 12px; background: var(--vscode-menu-background, var(--panel)); }
+.filter-group > legend { padding: 0 5px; color: var(--muted); }
+.filter-group select, .filter-group button { color: var(--vscode-menu-foreground, var(--text)); background: var(--vscode-menu-background, var(--panel)); border: 1px solid var(--vscode-input-border, var(--border)); border-radius: 4px; }
+.filter-group select { padding: 4px 7px; }
+.filter-group button { padding: 5px 9px; }
+.filter-group button:hover:not(:disabled) { color: var(--vscode-menu-selectionForeground, var(--text)); background: var(--vscode-menu-selectionBackground, var(--row-hover)); }
+.filter-group .remove-filter, .filter-group .remove-group { color: var(--danger); background: transparent; border-color: transparent; }
 .filter-title, .filter-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .filter-title button, .filter-actions > :last-child { border: 1px solid var(--vscode-button-border, var(--border)); border-radius: 4px; background: var(--button-bg); color: var(--button-fg); padding: 5px 10px; }
 .filter-row { display: grid; grid-template-columns: minmax(130px, 1fr) 90px minmax(120px, 1fr) 30px; gap: 6px; margin-top: 8px; }

@@ -29,70 +29,82 @@ bool is_numeric_operator(const std::string& op) {
   return op == ">" || op == ">=" || op == "<" || op == "<=" || op == "numeric_eq";
 }
 
-// Spectra with a peak (or neutral loss) in [lower, upper] whose intensity
-// relative to the base peak is at least `intensity`.
-std::vector<bool> peak_mask(const MSDataset& view, const json& condition, bool neutral_loss) {
-  double center = 0;
-  double threshold = 0;
-  double tolerance = 0;
-  try {
-    center = required_number(condition.value("mz", json()), "");
-    std::string tolerance_text = json_text(condition.value("tolerance", json("")));
-    auto parsed = parse_number(tolerance_text);
-    if (!parsed) throw FilterError("");
-    tolerance = *parsed;
-    threshold = condition.contains("intensity") ? required_number(condition["intensity"], "") : 0.0;
-  } catch (const FilterError&) {
-    throw FilterError("m/z, tolerance, and intensity must be numeric");
-  }
-  if (!std::isfinite(center) || !std::isfinite(threshold)) {
-    throw FilterError("m/z and intensity must be finite");
-  }
-  if (threshold < 0.0 || threshold > 1.0) {
-    throw FilterError("intensity must be between 0.0 and 1.0");
-  }
-  if (!std::isfinite(tolerance) || tolerance < 0) {
-    throw FilterError("tolerance must be finite and greater than or equal to zero");
-  }
-  std::string unit = fold_case(json_text(condition.value("tolerance_unit", json("Da"))));
-  double delta = unit == "ppm" ? std::abs(center) * tolerance / 1'000'000 : tolerance;
-  double lower = center - delta;
-  double upper = center + delta;
+Value filter_value(const json& value) {
+  if (value.is_null()) return std::monostate{};
+  if (value.is_boolean()) return value.get<bool>();
+  if (value.is_number_integer()) return value.get<int64_t>();
+  if (value.is_number()) return value.get<double>();
+  return json_text(value);
+}
 
-  std::vector<double> precursor;
-  if (neutral_loss) {
-    std::string column = json_text(condition.value("precursor_column", json("")));
-    if (column.empty()) column = "PrecursorMZ";
-    if (!view.has_column(column)) {
-      throw FilterError("column not available in current view: " + column);
-    }
-    for (const auto& value : view.column_values(column)) {
-      auto number = numeric_value(value);
-      if (!number || !std::isfinite(*number)) {
-        throw FilterError("column '" + column + "' must contain finite numeric values");
-      }
-      precursor.push_back(*number);
-    }
+msentity::FilterNode filter_node(const MSDataset& dataset, const json& value) {
+  if (!value.is_object()) throw FilterError("Filter group children must be objects");
+  if (value.contains("children")) {
+    std::string logic = fold_case(json_text(value.value("logic", json("and"))));
+    if (logic != "and" && logic != "or") throw FilterError("Filter group logic must be AND or OR");
+    msentity::FilterGroup group;
+    group.logic = logic == "and" ? msentity::FilterLogic::And : msentity::FilterLogic::Or;
+    if (!value["children"].is_array()) throw FilterError("Filter group children must be an array");
+    for (const auto& child : value["children"]) group.children.push_back(filter_node(dataset, child));
+    return group;
   }
+  std::string op = json_text(value.value("operator", json("text_eq")));
+  msentity::FilterCondition condition;
+  condition.column = json_text(value.value("column", json("")));
+  condition.value = filter_value(value.value("value", json("")));
+  if (op == "text_eq") condition.op = msentity::FilterOperator::TextEquals;
+  else if (op == "!=") condition.op = msentity::FilterOperator::TextNotEquals;
+  else if (op == "contains") condition.op = msentity::FilterOperator::Contains;
+  else if (op == "numeric_eq") condition.op = msentity::FilterOperator::NumericEquals;
+  else if (op == ">") condition.op = msentity::FilterOperator::Greater;
+  else if (op == ">=") condition.op = msentity::FilterOperator::GreaterEqual;
+  else if (op == "<") condition.op = msentity::FilterOperator::Less;
+  else if (op == "<=") condition.op = msentity::FilterOperator::LessEqual;
+  else if (op == "is_missing") condition.op = msentity::FilterOperator::IsMissing;
+  else if (op == "is_not_missing") condition.op = msentity::FilterOperator::IsNotMissing;
+  else if (op == "row_ids") {
+    condition.op = msentity::FilterOperator::RowIds;
+    for (const auto& id : value.value("row_ids", json::array())) if (id.is_number_integer()) condition.row_ids.push_back(id.get<int64_t>());
+  } else if (op == "spectrum_peak" || op == "neutral_loss") {
+    condition.op = op == "spectrum_peak" ? msentity::FilterOperator::SpectrumPeak : msentity::FilterOperator::NeutralLoss;
+    try {
+      condition.mz = required_number(value.value("mz", json()), "");
+      condition.tolerance = required_number(value.value("tolerance", json()), "");
+      condition.minimum_relative_intensity = value.contains("intensity") ? required_number(value["intensity"], "") : 0;
+    } catch (const FilterError&) { throw FilterError("m/z, tolerance, and intensity must be numeric"); }
+    condition.tolerance_ppm = fold_case(json_text(value.value("tolerance_unit", json("Da")))) == "ppm";
+    condition.precursor_column = json_text(value.value("precursor_column", json("PrecursorMZ")));
+  } else if (op == "smarts") throw FilterError("SMARTS filtering requires optional RDKit support");
+  else throw FilterError("Unknown filter operator: " + op);
+  if (condition.op != msentity::FilterOperator::RowIds &&
+      condition.op != msentity::FilterOperator::SpectrumPeak &&
+      condition.op != msentity::FilterOperator::NeutralLoss &&
+      !dataset.has_column(condition.column)) throw FilterError("Unknown filter column: " + condition.column);
+  return condition;
+}
 
-  std::vector<bool> mask(static_cast<std::size_t>(view.size()), false);
-  for (int64_t position = 0; position < view.size(); ++position) {
-    auto spectrum = view.peaks().spectrum(position);
-    double maximum = 0.0;
-    if (threshold > 0.0) {
-      for (int64_t i = 0; i < spectrum.size(); ++i) maximum = std::max(maximum, spectrum.intensity(i));
-      if (maximum <= 0.0) continue;
+msentity::FilterGroup filter_group(const MSDataset& dataset, const json& filters) {
+  if (filters.is_null()) return {};
+  if (filters.is_array()) {
+    msentity::FilterGroup group;
+    for (const auto& item : filters) {
+      if (!item.is_object()) continue;
+      std::string column = json_text(item.value("column", json("")));
+      std::string op = json_text(item.value("operator", json("text_eq")));
+      json raw = item.value("value", json(""));
+      // Preserve legacy behavior for incomplete flat rows.
+      if (op != "row_ids" && op != "spectrum_peak" && op != "neutral_loss" &&
+          op != "is_missing" && op != "is_not_missing" &&
+          (!dataset.has_column(column) || raw.is_null() || json_text(raw).empty())) continue;
+      group.children.push_back(filter_node(dataset, item));
     }
-    for (int64_t i = 0; i < spectrum.size(); ++i) {
-      double x = neutral_loss ? precursor[static_cast<std::size_t>(position)] - spectrum.mz(i)
-                              : spectrum.mz(i);
-      if (x < lower || x > upper) continue;
-      if (threshold > 0.0 && spectrum.intensity(i) / maximum < threshold) continue;
-      mask[static_cast<std::size_t>(position)] = true;
-      break;
-    }
+    return group;
   }
-  return mask;
+  auto node = filter_node(dataset, filters);
+  if (auto* group = std::get_if<msentity::FilterGroup>(&node)) return *group;
+  msentity::FilterGroup group;
+  group.children.push_back(std::move(node));
+  return group;
 }
 
 }  // namespace
@@ -126,47 +138,7 @@ MSDataset apply_dataset_view(const MSDataset& dataset, const json& filters, cons
     return std::find(available.begin(), available.end(), column) != available.end();
   };
 
-  for (const auto& condition : filters.is_array() ? filters : json::array()) {
-    if (!condition.is_object()) continue;
-    std::string op = json_text(condition.value("operator", json("text_eq")));
-    std::vector<bool> mask;
-    if (op == "spectrum_peak" || op == "neutral_loss") {
-      mask = peak_mask(view, condition, op == "neutral_loss");
-    } else if (op == "row_ids") {
-      std::unordered_set<int64_t> wanted;
-      for (const auto& id : condition.value("row_ids", json::array())) {
-        if (id.is_number_integer()) wanted.insert(id.get<int64_t>());
-      }
-      for (int64_t id : view.peaks().index()) mask.push_back(wanted.count(id) > 0);
-    } else {
-      std::string column = json_text(condition.value("column", json("")));
-      json raw = condition.value("value", json(""));
-      if (!has(column) || raw.is_null() || json_text(raw).empty()) continue;
-      if (op == "smarts") throw FilterError("SMARTS filtering requires optional RDKit support");
-      auto values = view.column_values(column);
-      if (is_numeric_operator(op)) {
-        double right =
-            required_number(raw, "Filter value for " + column + " must be numeric");
-        for (const auto& value : values) {
-          auto left = numeric_value(value);
-          mask.push_back(left.has_value() && numeric_match(op, *left, right));
-        }
-      } else {
-        std::string right = fold_case(json_text(raw));
-        for (const auto& value : values) {
-          std::string left = fold_case(display_text(value));
-          if (op == "contains") {
-            mask.push_back(left.find(right) != std::string::npos);
-          } else if (op == "!=") {
-            mask.push_back(left != right);
-          } else {
-            mask.push_back(left == right);
-          }
-        }
-      }
-    }
-    view = view.filter(mask);
-  }
+  view = view.filter(filter_group(dataset, filters));
 
   json items = sort.is_object() ? json::array({sort}) : sort.is_array() ? sort : json::array();
   std::vector<std::vector<Value>> keys;
@@ -208,19 +180,19 @@ std::vector<int64_t> table_view_rows(
   auto has = [&](const std::string& column) {
     return std::find(columns.begin(), columns.end(), column) != columns.end();
   };
-  for (const auto& condition : filters.is_array() ? filters : json::array()) {
+  auto condition_mask = [&](const json& condition) {
     std::string column = json_text(condition.value("column", json("")));
     if (!has(column)) throw FilterError("Unknown filter column: " + column);
     std::string op = json_text(condition.value("operator", json("")));
     json raw = condition.value("value", json(""));
     auto values = column_values(column);
-    std::vector<int64_t> kept;
+    std::vector<bool> mask(static_cast<std::size_t>(n_rows), false);
     if (is_numeric_operator(op)) {
       double right = required_number(raw, "Filter value must be numeric");
       if (!std::isfinite(right)) throw FilterError("Filter value must be finite");
-      for (int64_t row : rows) {
+      for (int64_t row = 0; row < n_rows; ++row) {
         auto left = numeric_value(values[static_cast<std::size_t>(row)]);
-        if (left && numeric_match(op, *left, right)) kept.push_back(row);
+        mask[static_cast<std::size_t>(row)] = left && numeric_match(op, *left, right);
       }
     } else {
       if (op != "contains" && op != "text_eq" && op != "!=") {
@@ -228,15 +200,32 @@ std::vector<int64_t> table_view_rows(
       }
       std::string right = json_text(raw);
       std::string right_folded = fold_case(right);
-      for (int64_t row : rows) {
+      for (int64_t row = 0; row < n_rows; ++row) {
         std::string left = display_text(values[static_cast<std::size_t>(row)]);
         bool match = op == "contains" ? fold_case(left).find(right_folded) != std::string::npos
                      : op == "text_eq" ? left == right
                                        : left != right;
-        if (match) kept.push_back(row);
+        mask[static_cast<std::size_t>(row)] = match;
       }
     }
-    rows = std::move(kept);
+    return mask;
+  };
+  std::function<std::vector<bool>(const json&)> evaluate = [&](const json& node) {
+    if (!node.is_object() || !node.contains("children")) return condition_mask(node);
+    std::string logic = fold_case(json_text(node.value("logic", json("and"))));
+    if (logic != "and" && logic != "or") throw FilterError("Filter group logic must be AND or OR");
+    if (!node["children"].is_array()) throw FilterError("Filter group children must be an array");
+    std::vector<bool> result(static_cast<std::size_t>(n_rows), logic == "and");
+    for (const auto& child : node["children"]) {
+      auto child_mask = evaluate(child);
+      for (std::size_t i = 0; i < result.size(); ++i) result[i] = logic == "and" ? result[i] && child_mask[i] : result[i] || child_mask[i];
+    }
+    return result;
+  };
+  json root = filters.is_array() ? json{{"logic", "and"}, {"children", filters}} : filters;
+  if (!root.is_null()) {
+    auto mask = evaluate(root);
+    rows.erase(std::remove_if(rows.begin(), rows.end(), [&](int64_t row) { return !mask[static_cast<std::size_t>(row)]; }), rows.end());
   }
   if (sort.is_object() && sort.contains("column")) {
     std::string column = json_text(sort["column"]);

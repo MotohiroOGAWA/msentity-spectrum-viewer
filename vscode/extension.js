@@ -12,6 +12,11 @@ const VIEW_TYPE = "msentity.spectrumViewer";
 const SIMILARITY_VIEW_TYPE = "msentity.similarityViewer";
 let outputChannel;
 
+function configuredPageSize() {
+  const value = Number(vscode.workspace.getConfiguration("msentitySpectrumViewer").get("pageSize", 20));
+  return Math.max(1, Math.min(500, value || 20));
+}
+
 function configuredStructureSmilesColumn() {
   return String(
     vscode.workspace.getConfiguration("msentitySpectrumViewer").get("structureSmilesColumn", "SMILES") || "SMILES"
@@ -182,9 +187,12 @@ class MSEntityViewerProvider {
     const isSimilarity = path.extname(document.uri.fsPath).toLowerCase() === ".mssim";
     webview.html = getDatasetWebviewHtml(webview, uiDir, document.uri, isSimilarity);
 
-    const config = vscode.workspace.getConfiguration("msentitySpectrumViewer");
-    const pageSize = Math.max(1, Math.min(500, Number(config.get("pageSize", 20)) || 20));
+    const pageSize = configuredPageSize();
     const loadOptions = document.loadOptions || configuredLoadOptions();
+    // Only explicit per-file choices are pinned. Entries without an override
+    // receive the latest workspace settings on every Reload.
+    const datasetLoadOptions = new Map();
+    if (document.loadOptions) datasetLoadOptions.set(document.uri.fsPath, document.loadOptions);
     const host = loadHost(this.context);
     const executable = resolveBackendExecutable(this.context, host);
 
@@ -334,13 +342,13 @@ class MSEntityViewerProvider {
           break;
         case "change-load-options": {
           if (isSimilarity) break;
-          const next = await chooseLoadOptions(loadOptions);
+          const next = await chooseLoadOptions(
+            datasetLoadOptions.get(message.datasetId) || configuredLoadOptions());
           if (!next || disposed) break;
-          document.loadOptions = next;
-          this.forcedLoadOptions.set(document.uri.toString(), next);
-          if (document.fileType) this.forcedFileTypes.set(document.uri.toString(), document.fileType);
-          webviewPanel.dispose();
-          setTimeout(() => vscode.commands.executeCommand("vscode.openWith", document.uri, VIEW_TYPE), 0);
+          datasetLoadOptions.set(message.datasetId, next);
+          writeRequest({ type: "reload", dataset_id: message.datasetId,
+            filters: message.filters, sort: message.sort, bins: message.bins,
+            page_size: configuredPageSize(), load_options: next, ...configuredStructureOptions() });
           break;
         }
         case "chemistry-error-notification":
@@ -391,6 +399,8 @@ class MSEntityViewerProvider {
         case "reload":
           writeRequest({ type: "reload", dataset_id: message.datasetId, filters: message.filters,
             sort: message.sort, bins: message.bins,
+            page_size: isSimilarity ? undefined : configuredPageSize(),
+            load_options: datasetLoadOptions.get(message.datasetId) || configuredLoadOptions(),
             ...configuredStructureOptions() });
           break;
         case "calculate-similarity":
@@ -455,6 +465,21 @@ class MSEntityViewerProvider {
             filters: { "Mass spectrum datasets": Object.keys(DATASET_FORMATS) }
           });
           if (selected?.[0]) writeRequest({ type: "add-dataset", path: selected[0].fsPath });
+          break;
+        }
+        case "merge-datasets":
+          writeRequest({ type: "merge-datasets", dataset_ids: message.datasetIds, name: message.name });
+          break;
+        case "choose-merge-datasets": {
+          const choices = await vscode.window.showQuickPick((message.datasets || []).map(dataset => ({
+            label: String(dataset.name), description: String(dataset.id), dataset
+          })), { title: "Merge datasets", placeHolder: "Select two or more registered datasets", canPickMany: true, ignoreFocusOut: true });
+          if (!choices || choices.length < 2 || disposed) {
+            if (choices) vscode.window.showErrorMessage("Select at least two datasets to merge.");
+            break;
+          }
+          const name = await vscode.window.showInputBox({ title: "Merged dataset name", value: "merged_dataset", ignoreFocusOut: true });
+          if (name !== undefined && !disposed) writeRequest({ type: "merge-datasets", dataset_ids: choices.map(item => item.dataset.id), name });
           break;
         }
         case "export-dataset": {

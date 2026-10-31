@@ -100,10 +100,28 @@ MSDataset load_dataset(const fs::path& path, const std::optional<std::string>& f
 
 struct Entry {
   MSDataset dataset;
-  fs::path path;
+  std::optional<fs::path> path;
   std::optional<std::string> file_type;
   std::string name;
+  DatasetLoadOptions load_options;
+  // Immutable snapshots make a merged entry independent of later edits or
+  // removal of its source entries, and define Reload as rebuilding that snapshot.
+  std::vector<MSDataset> merge_sources;
+  std::vector<std::string> merge_source_names;
 };
+
+DatasetLoadOptions request_load_options(const json& value, DatasetLoadOptions fallback) {
+  if (!value.is_object()) return fallback;
+  fallback.allow_duplicate_cols = value.value("allowDuplicateColumns", fallback.allow_duplicate_cols);
+  fallback.canonicalize_column = value.value("canonicalizeColumns", fallback.canonicalize_column);
+  fallback.canonicalize_adduct_type = value.value("canonicalizeAdductTypes", fallback.canonicalize_adduct_type);
+  fallback.normalize_intensity = value.value("normalizeIntensity", fallback.normalize_intensity);
+  fallback.infer_types = value.value("inferTypes", fallback.infer_types);
+  if (value.contains("specIdPrefix") && value["specIdPrefix"].is_string()) fallback.spec_id_prefix = value["specIdPrefix"].get<std::string>();
+  if (value.contains("errorLogLevel") && value["errorLogLevel"].is_string()) fallback.error_log_level = value["errorLogLevel"].get<std::string>();
+  if (value.contains("errorLogFile") && value["errorLogFile"].is_string()) fallback.error_log_file = value["errorLogFile"].get<std::string>();
+  return fallback;
+}
 
 json attributes_json(const MSDataset& dataset) {
   json out = json::object();
@@ -163,7 +181,7 @@ class DatasetBackend {
       return 1;
     }
     initial_id_ = utf8(input);
-    add_entry(initial_id_, Entry{dataset, input, file_type, utf8(input.filename())});
+    add_entry(initial_id_, Entry{dataset, input, file_type, utf8(input.filename()), load_options_, {}, {}});
     emit({{"type", "backend-ready"}, {"file", initial_id_}, {"total_rows", dataset.size()},
           {"page_size", page_size_},
           {"dataset", {{"id", initial_id_}, {"name", utf8(input.filename())},
@@ -229,7 +247,7 @@ class DatasetBackend {
     auto smiles = detect_smiles_column(view.columns(), structure_column_);
     return {{"dataset_id", id},
             {"dataset_name", source.name},
-            {"dataset_path", utf8(source.path)},
+            {"dataset_path", source.path ? json(utf8(*source.path)) : json(nullptr)},
             {"columns", page_view.columns()},
             {"rows", rows},
             {"row_ids", page_view.peaks().index()},
@@ -289,9 +307,22 @@ class DatasetBackend {
       }
     } else if (type == "add-dataset") {
       add_dataset(request);
+    } else if (type == "merge-datasets") {
+      merge_datasets(request);
     } else if (type == "reload") {
       Entry& source = entry(id);
-      source.dataset = load_dataset(source.path, source.file_type, load_options_);
+      if (request.contains("page_size")) {
+        if (!request["page_size"].is_number_integer()) {
+          throw std::invalid_argument("page_size must be an integer");
+        }
+        page_size_ = std::clamp(request["page_size"].get<int>(), 1, 500);
+      }
+      if (source.path) {
+        source.load_options = request_load_options(request.value("load_options", json()), source.load_options);
+        source.dataset = load_dataset(*source.path, source.file_type, source.load_options);
+      } else {
+        source.dataset = merge_snapshots(source.merge_sources, source.merge_source_names);
+      }
       emit({{"type", "dataset-reloaded"}, {"dataset_id", id}});
       send_page(id, request, 0);
     } else if (type == "similarity-options") {
@@ -446,7 +477,8 @@ class DatasetBackend {
       file_type = request["file_type"].get<std::string>();
     }
     // Each addition reads the source again and owns independent edits.
-    MSDataset dataset = load_dataset(path, file_type, load_options_);
+    DatasetLoadOptions options = request_load_options(request.value("load_options", json()), load_options_);
+    MSDataset dataset = load_dataset(path, file_type, options);
     std::string id = utf8(path);
     if (used_ids_.count(id)) {
       std::random_device random;
@@ -460,10 +492,53 @@ class DatasetBackend {
     for (int n = 1; names.count(name); ++n) {
       name = utf8(path.stem()) + " (" + std::to_string(n) + ")" + utf8(path.extension());
     }
-    add_entry(id, Entry{dataset, path, file_type, name});
+    add_entry(id, Entry{dataset, path, file_type, name, options, {}, {}});
     emit({{"type", "dataset-added"},
           {"dataset", {{"id", id}, {"name", name}, {"path", utf8(path)}, {"total_rows", dataset.size()}}}});
     emit({{"type", "dataset-page"}, {"value", page_json(dataset, 0, id, entries_.at(id))}});
+  }
+
+  static MSDataset merge_snapshots(const std::vector<MSDataset>& sources,
+                                   const std::vector<std::string>& names) {
+    std::string source_column = "SourceDataset";
+    std::set<std::string> columns;
+    for (const auto& source : sources) columns.insert(source.columns().begin(), source.columns().end());
+    for (int suffix = 2; columns.count(source_column); ++suffix) source_column = "SourceDataset_" + std::to_string(suffix);
+    std::vector<MSDataset> labeled;
+    labeled.reserve(sources.size());
+    for (std::size_t i = 0; i < sources.size(); ++i) {
+      MSDataset copy = sources[i].copy();
+      copy.set_column(source_column, Value(names[i]));
+      labeled.push_back(std::move(copy));
+    }
+    MSDataset merged = MSDataset::concat(labeled, "merged_dataset");
+    merged.set_attribute("MergeSourceColumn", source_column);
+    return merged;
+  }
+
+  void merge_datasets(const json& request) {
+    try {
+      json ids = request.value("dataset_ids", json::array());
+      if (!ids.is_array() || ids.size() < 2) throw std::invalid_argument("Select at least two datasets to merge");
+      std::vector<MSDataset> snapshots;
+      std::vector<std::string> names;
+      for (const auto& value : ids) {
+        std::string source_id = json_text(value);
+        const Entry& source = entry(source_id);
+        // Merge always uses the registered full dataset, never its current filter/sort view.
+        snapshots.push_back(source.dataset.copy());
+        names.push_back(source.name);
+      }
+      std::string name = json_text(request.value("name", json("merged_dataset")));
+      if (name.empty()) name = "merged_dataset";
+      std::string id = "memory:merge:" + std::to_string(++merge_sequence_);
+      MSDataset merged = merge_snapshots(snapshots, names);
+      add_entry(id, Entry{merged, std::nullopt, std::nullopt, name, load_options_, snapshots, names});
+      emit({{"type", "dataset-added"}, {"dataset", {{"id", id}, {"name", name}, {"path", nullptr}, {"total_rows", merged.size()}, {"memory", true}}}});
+      emit({{"type", "dataset-page"}, {"value", page_json(merged, 0, id, entries_.at(id))}});
+    } catch (const std::exception& error) {
+      emit({{"type", "merge-error"}, {"message", error.what()}});
+    }
   }
 
   void calculate_similarity(const json& request) {
@@ -479,7 +554,7 @@ class DatasetBackend {
       fs::path path = resolve(reference_path);
       if (!fs::is_regular_file(path)) throw std::runtime_error("No such file: " + utf8(path));
       loaded = Entry{load_dataset(path, std::nullopt, load_options_), path, std::nullopt,
-                     utf8(path.filename())};
+                     utf8(path.filename()), load_options_, {}, {}};
       second = &loaded;
     } else {
       std::string id2 = json_text(request.value("dataset2", json()));
@@ -490,9 +565,9 @@ class DatasetBackend {
     }
     fs::path target = resolve(json_text(request.value("path", json(""))));
     for (const auto& [key, item] : entries_) {
-      if (item.path == target) throw std::invalid_argument("Output must not overwrite an input dataset");
+      if (item.path && *item.path == target) throw std::invalid_argument("Output must not overwrite an input dataset");
     }
-    if (second->path == target) throw std::invalid_argument("Output must not overwrite an input dataset");
+    if (second->path && *second->path == target) throw std::invalid_argument("Output must not overwrite an input dataset");
 
     json parameters = request.value("parameters", json::object());
     if (!parameters.is_object()) throw std::invalid_argument("Similarity parameters must be an object");
@@ -535,16 +610,16 @@ class DatasetBackend {
                 {"percent", percent}});
         };
         return sim::calculate_library_search(first.dataset, second->dataset, threshold, options,
-                                             include.value_or(true), utf8(first.path),
-                                             utf8(second->path), progress);
+                                             include.value_or(true), first.path ? utf8(*first.path) : first.name,
+                                             second->path ? utf8(*second->path) : second->name, progress);
       }
       if (mode == "by_key") {
-        if (first.path == second->path) {
+        if (id1 == json_text(request.value("dataset2", json()))) {
           throw std::invalid_argument("Select two different datasets for metadata-key matching");
         }
         return sim::calculate_similarity(first.dataset, second->dataset, key1, key2, options,
-                                         include.value_or(false), utf8(first.path),
-                                         utf8(second->path));
+                                         include.value_or(false), first.path ? utf8(*first.path) : first.name,
+                                         second->path ? utf8(*second->path) : second->name);
       }
       throw std::invalid_argument("Unknown similarity mode: " + mode);
     }();
@@ -634,6 +709,7 @@ class DatasetBackend {
   }
 
   DatasetLoadOptions load_options_;
+  uint64_t merge_sequence_ = 0;
 };
 
 }  // namespace

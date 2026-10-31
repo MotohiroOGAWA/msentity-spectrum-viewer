@@ -82,6 +82,14 @@ test("capabilities follow backend-ready; SMARTS filters become row ids", { skip 
       { column: "Name", operator: "text_eq", value: "benzene" },
       { column: "Missing", operator: "smarts", value: "C" }] });
     assert.deepEqual((await next("dataset-page")).value.rows.map((r) => r.Name), ["benzene"]);
+    session.request({ type: "page", filters: { logic: "and", children: [
+      { logic: "or", children: [
+        { column: "my_structure", operator: "smarts", value: "c1ccccc1" },
+        { column: "Name", operator: "text_eq", value: "ethanol" },
+      ] },
+      { column: "Name", operator: "!=", value: "aspirin" },
+    ] } });
+    assert.deepEqual((await next("dataset-page")).value.rows.map((r) => r.Name), ["ethanol", "benzene"]);
     session.request({ type: "page", filters: [{ column: "my_structure", operator: "smarts", value: "[invalid" }] });
     const error = await next("filter-error");
     assert.equal(error.operator, "smarts");

@@ -84,9 +84,9 @@ its current page when you switch away and return.
 ### Loading options
 
 Use **More ... → Loading options and reload** to change how the current file is
-read. This action is available while the file is still loading and after it has
-opened. It stops the current reader and opens the same file again with the
-selected options. Unsaved edits in the viewer are discarded.
+read. It reloads that entry with explicit per-file options. Normal **Reload**
+uses the latest workspace Loading and Structure settings unless the entry has
+an explicit per-file choice. Unsaved edits are discarded.
 
 The default options for newly opened files are available under **Settings →
 Extensions → msentity Spectrum Viewer → Loading**. They control duplicate
@@ -94,6 +94,14 @@ MSP/MGF fields, column and adduct canonicalization, intensity normalization,
 SpecID assignment, TSV/CSV type inference, and optional error logging. Error
 logging defaults to `none`, so no log is created unless it is explicitly
 enabled.
+
+Use **Merge** in the dataset menu to select two or more registered datasets.
+The originals remain unchanged. The new in-memory dataset preserves source and
+spectrum order, uses the union of columns, and adds a collision-safe
+`SourceDataset` column. It can be filtered, sorted, edited, used for similarity,
+exported, or merged again. Merge always uses complete registered datasets, not
+their displayed filter/sort views. Reload rebuilds it from snapshots captured
+at merge time, so removing a source entry does not invalidate it.
 
 Pin the upper spectrum and select another spectrum to compare them on a shared
 m/z axis. The second spectrum is drawn downward in red. Each side can be pinned
