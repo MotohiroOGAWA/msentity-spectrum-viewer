@@ -27,6 +27,7 @@
   const comparison = { top: null, bottom: null, topPinned: false, bottomPinned: false };
   let similarityMethod = "dot";
   let similarityTolerance = 0.05;
+  let metadataOpen = false;
 
   const esc = (v) => String(v ?? "")
     .replaceAll("&", "&amp;")
@@ -634,7 +635,10 @@
             </div>
           </aside>
         </div>
-        ${metadata}
+        <details id="spectrum-metadata" class="metadata-details" ${metadataOpen ? "open" : ""}>
+          <summary>Metadata</summary>
+          ${metadata}
+        </details>
         <dialog id="export-dialog" class="export-dialog">
           <form method="dialog" class="export-header"><h2>Export spectrum image</h2><button aria-label="Close">×</button></form>
           <fieldset class="export-options">
@@ -674,6 +678,9 @@
     document.getElementById("pin-top").onclick = () => {
       comparison.topPinned = !comparison.topPinned;
       renderSpectrum();
+    };
+    document.getElementById("spectrum-metadata").ontoggle = event => {
+      metadataOpen = event.currentTarget.open;
     };
     const pinBottom = document.getElementById("pin-bottom");
     if (pinBottom) pinBottom.onclick = () => {
