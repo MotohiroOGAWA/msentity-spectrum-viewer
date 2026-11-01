@@ -77,6 +77,47 @@
   let datasetOptions = [];
   let activeDatasetId = "";
   const datasetPages = new Map();
+  const tableViews = new Map();
+  const columnWidths = new Map();
+  const resettingColumnWidths = new Set();
+
+  const tableView = datasetId => {
+    const key = String(datasetId || "");
+    if (!tableViews.has(key)) tableViews.set(key, { scrollLeft: 0 });
+    return tableViews.get(key);
+  };
+  const widthsFor = datasetId => {
+    const key = String(datasetId || "");
+    if (!columnWidths.has(key)) columnWidths.set(key, new Map());
+    return columnWidths.get(key);
+  };
+  function captureTableView() {
+    const wrap = document.querySelector(".table-wrap[data-dataset-id]");
+    if (wrap) tableView(wrap.dataset.datasetId).scrollLeft = wrap.scrollLeft;
+  }
+  function restoreTableView() {
+    const wrap = document.querySelector(".table-wrap[data-dataset-id]");
+    if (wrap) wrap.scrollLeft = tableView(wrap.dataset.datasetId).scrollLeft;
+  }
+  function freezeAutomaticColumnWidths() {
+    if (loadingPage || resettingColumnWidths.has(activeDatasetId)) return;
+    const table = document.querySelector(".dataset-table");
+    if (!table) return;
+    const headers = [...table.querySelectorAll("thead th[data-column-key]")];
+    const cols = [...table.querySelectorAll("colgroup col")];
+    const widths = widthsFor(activeDatasetId);
+    for (const [index, header] of headers.entries()) {
+      if (!widths.has(header.dataset.columnKey)) widths.set(header.dataset.columnKey, Math.round(header.getBoundingClientRect().width));
+      const width = widths.get(header.dataset.columnKey);
+      cols[index].style.width = cols[index].style.minWidth = cols[index].style.maxWidth = `${width}px`;
+    }
+    table.classList.add("has-custom-widths");
+  }
+  const columnStyle = (widths, key) => {
+    const width = widths.get(key);
+    return Number.isFinite(width) ? ` style="width:${width}px;min-width:${width}px;max-width:${width}px"` : "";
+  };
+  const resizeHandle = key => `<span class="column-resize-handle" data-resize-column="${esc(key)}" title="Drag to resize column" aria-hidden="true"></span>`;
 
   const esc = (v) => String(v ?? "")
     .replaceAll("&", "&amp;")
@@ -168,6 +209,7 @@
   }
 
   function render() {
+    captureTableView();
     if (!datasetOptions.length && !activeDatasetId && value === null) {
       app.innerHTML = `<div class="viewer"><div class="toolbar"><span class="summary">No datasets</span><button id="add-dataset" class="secondary-button dataset-primary">${toolbarIcon("add")} Add dataset</button></div><div class="status"><div><p>No datasets loaded.</p><p>Add a dataset or drop MSDS, MSP, MGF, TSV, or CSV files here.</p></div></div></div>`;
       document.getElementById("add-dataset")?.addEventListener("click", () => vscode.postMessage({type: "add-dataset"}));
@@ -186,6 +228,8 @@
       const index = rowSort.findIndex((item) => item.column === column);
       return index < 0 ? null : { ...rowSort[index], priority: index + 1 };
     };
+    const widths = widthsFor(activeDatasetId);
+    const columnKeys = ["row", "spectrum", ...(showStructureColumn ? ["structure"] : []), ...selectedColumns.map(c => `metadata:${c}`)];
 
     const columnMenu = columnMenuOpen ? `
       <div class="column-menu" id="column-menu">
@@ -259,12 +303,47 @@
           </div>
         </div>
         ${metadataForm()}
-        <div class="table-wrap"><table class="dataset-table"><thead><tr><th class="row-column">Row</th><th class="spectrum-column">Spectrum</th>${showStructureColumn ? `<th class="structure-column">Structure</th>` : ""}${selectedColumns.map((c) => { const item = sortFor(c); return `<th><button class="table-sort" data-sort-column="${esc(c)}" title="Click: ascending → descending → remove sort">${esc(c)}<span>${item ? `${item.priority}${item.direction === "asc" ? "▲" : "▼"}` : ""}</span></button></th>`; }).join("")}</tr></thead><tbody>
+        <div class="table-wrap" data-dataset-id="${esc(activeDatasetId)}"><table class="dataset-table ${widths.size ? "has-custom-widths" : ""}"><colgroup>${columnKeys.map(key => `<col data-column-key="${esc(key)}"${columnStyle(widths, key)}>`).join("")}</colgroup><thead><tr><th class="row-column" data-column-key="row">${resizeHandle("row")}Row</th><th class="spectrum-column" data-column-key="spectrum">${resizeHandle("spectrum")}Spectrum</th>${showStructureColumn ? `<th class="structure-column" data-column-key="structure">${resizeHandle("structure")}Structure</th>` : ""}${selectedColumns.map((c) => { const item = sortFor(c), key = `metadata:${c}`; return `<th data-column-key="${esc(key)}"><button class="table-sort" data-sort-column="${esc(c)}" title="Click: ascending → descending → remove sort">${esc(c)}<span>${item ? `${item.priority}${item.direction === "asc" ? "▲" : "▼"}` : ""}</span></button>${resizeHandle(key)}</th>`; }).join("")}</tr></thead><tbody>
           ${pageRows.length ? pageRows.map(({ row, index }) => { const smiles = smilesColumn ? String(row?.[smilesColumn] ?? "").trim() : ""; return `<tr class="${selectedSpectrumIndex === index ? "selected-record" : ""}"><td class="row-column">${rowOffset() + index + 1}</td><td class="spectrum-column"><button class="spectrum-button" data-spectrum-index="${index}" title="Show spectrum ${rowOffset() + index + 1}"><svg viewBox="0 0 28 22"><path d="M2 19h24M4 18V13m4 5V7m4 11v-4m4 4V3m4 15V9m4 9v-7"/></svg></button></td>${showStructureColumn ? `<td class="structure-column">${smiles ? `<button class="structure-button" data-structure-index="${index}" aria-label="View structure" title="View structure"><svg viewBox="0 0 28 24" aria-hidden="true" focusable="false"><path class="structure-edges" d="M14 3 21.8 7.5v9L14 21l-7.8-4.5v-9Z"/><g class="structure-nodes"><circle cx="14" cy="3" r="2.1"/><circle cx="21.8" cy="7.5" r="2.1"/><circle cx="21.8" cy="16.5" r="2.1"/><circle cx="14" cy="21" r="2.1"/><circle cx="6.2" cy="16.5" r="2.1"/><circle cx="6.2" cy="7.5" r="2.1"/></g></svg></button>` : ""}</td>` : ""}${selectedColumns.map((c) => `<td tabindex="0" data-edit-row="${index}" data-edit-column="${esc(c)}" title="Double-click or press Enter to edit: ${esc(display(row?.[c]))}">${esc(display(row?.[c]))}</td>`).join("")}</tr>`; }).join("") : `<tr><td colspan="${selectedColumns.length + 2 + (showStructureColumn ? 1 : 0)}" class="empty">No spectra match the filters.</td></tr>`}
         </tbody></table></div>
         <div class="pagination"><span>${start}–${end} of ${totalRows()}</span><div class="page-controls"><button id="prev-page" ${page() === 0 || loadingPage ? "disabled" : ""}>‹</button><span><input id="page-input" type="number" min="1" max="${pageCount()}" value="${page() + 1}" ${loadingPage ? "disabled" : ""}/> / ${pageCount()}</span><button id="next-page" ${page() >= pageCount() - 1 || loadingPage ? "disabled" : ""}>›</button></div><span>${loadingPage ? "Loading…" : `${pageSize()} rows/page`}</span></div>
         ${structurePreview ? `<div class="structure-backdrop" id="structure-backdrop"><section class="structure-preview" role="dialog" aria-modal="true" aria-labelledby="structure-title"><header><strong id="structure-title">Structure</strong><button id="close-structure" class="modal-close" aria-label="Close structure preview">×</button></header><div class="structure-canvas">${structurePreview.url ? `<img src="${esc(structurePreview.url)}" alt="Chemical structure for ${esc(structurePreview.smiles)}">` : `<span>Rendering structure…</span>`}</div><code>${esc(structurePreview.smiles)}</code></section></div>` : ""}
       </div>`;
+
+    restoreTableView();
+    freezeAutomaticColumnWidths();
+    document.querySelectorAll(".column-resize-handle").forEach(handle => handle.addEventListener("pointerdown", event => {
+      event.preventDefault(); event.stopPropagation();
+      const table = handle.closest("table"), headers = [...table.querySelectorAll("thead th[data-column-key]")];
+      const cols = [...table.querySelectorAll("colgroup col")];
+      const currentWidths = widthsFor(activeDatasetId);
+      // Freeze every current automatic width on the first resize. This keeps
+      // the other columns from moving while one divider is dragged.
+      for (const [headerIndex, header] of headers.entries()) {
+        if (!currentWidths.has(header.dataset.columnKey)) currentWidths.set(header.dataset.columnKey, Math.round(header.getBoundingClientRect().width));
+        const frozenWidth = currentWidths.get(header.dataset.columnKey);
+        cols[headerIndex].style.width = cols[headerIndex].style.minWidth = cols[headerIndex].style.maxWidth = `${frozenWidth}px`;
+      }
+      table.classList.add("has-custom-widths");
+      const header = handle.closest("th"), key = handle.dataset.resizeColumn;
+      const index = headers.indexOf(header), col = cols[index];
+      const startX = event.clientX, startWidth = currentWidths.get(key);
+      document.body.classList.add("resizing-column");
+      const move = moveEvent => {
+        const width = Math.max(48, Math.round(startWidth + moveEvent.clientX - startX));
+        currentWidths.set(key, width);
+        col.style.width = col.style.minWidth = col.style.maxWidth = `${width}px`;
+      };
+      const finish = () => {
+        document.removeEventListener("pointermove", move);
+        document.removeEventListener("pointerup", finish);
+        document.removeEventListener("pointercancel", finish);
+        document.body.classList.remove("resizing-column");
+      };
+      document.addEventListener("pointermove", move);
+      document.addEventListener("pointerup", finish);
+      document.addEventListener("pointercancel", finish);
+    }));
 
     const moreButton = document.getElementById("more-actions-button");
     const menuItems = () => [...document.querySelectorAll("#more-actions-menu button:not(:disabled)")];
@@ -420,6 +499,8 @@
       moreActionsOpen = false; render(); vscode.postMessage({ type: "open-settings" });
     });
     document.getElementById("loading-options-button")?.addEventListener("click", () => {
+      columnWidths.delete(activeDatasetId);
+      resettingColumnWidths.add(activeDatasetId);
       moreActionsOpen = false; render(); vscode.postMessage({ type: "change-load-options", datasetId: activeDatasetId, filters, sort: rowSort });
     });
     document.getElementById("add-dataset")?.addEventListener("click", () => { datasetMenuOpen = false; render(); vscode.postMessage({ type: "add-dataset" }); });
@@ -436,7 +517,7 @@
       vscode.postMessage({ type: "calculate-structure-counts", datasetId: activeDatasetId, filters });
     });
     document.getElementById("export-button")?.addEventListener("click", requestExport);
-    document.getElementById("reload-button")?.addEventListener("click", () => { structureCounts = null; loadingPage = true; selectedSpectrumIndex = null; render(); vscode.postMessage({ type: "reload", datasetId: activeDatasetId, filters, sort: rowSort }); });
+    document.getElementById("reload-button")?.addEventListener("click", () => { columnWidths.delete(activeDatasetId); resettingColumnWidths.add(activeDatasetId); structureCounts = null; loadingPage = true; selectedSpectrumIndex = null; render(); vscode.postMessage({ type: "reload", datasetId: activeDatasetId, filters, sort: rowSort }); });
     document.getElementById("prev-page")?.addEventListener("click", () => requestPage(page() - 1));
     document.getElementById("next-page")?.addEventListener("click", () => requestPage(page() + 1));
     const pageInput = document.getElementById("page-input");
@@ -513,6 +594,8 @@
       }
     } else if (message?.type === "dataset-reloaded") {
       structureCounts = null;
+      columnWidths.delete(String(message.dataset_id || ""));
+      resettingColumnWidths.add(String(message.dataset_id || ""));
       changedDatasets.delete(message.dataset_id);
       if (activeDatasetId === message.dataset_id) metadataDraft = null;
     } else if (message?.type === "dataset-removed") {
@@ -579,6 +662,7 @@
     } else if (message?.type === "dataset-page") {
       value = message.value;
       activeDatasetId = String(value?.dataset_id || activeDatasetId);
+      resettingColumnWidths.delete(activeDatasetId);
       datasetPages.set(activeDatasetId, Number.isInteger(value?.page) ? value.page : 0);
       loadingProgress = null;
       loadingPage = false;

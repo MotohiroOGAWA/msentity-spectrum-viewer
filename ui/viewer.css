@@ -75,7 +75,13 @@ button:disabled { cursor: default; opacity: .5; }
 .checkmark.checked { background: var(--button-bg); color: var(--button-fg); border-color: var(--button-bg); }
 .table-wrap { flex: 1 1 auto; overflow: auto; }
 .dataset-table { width: 100%; border-collapse: separate; border-spacing: 0; white-space: nowrap; }
+.dataset-table.has-custom-widths { width: max-content; min-width: 100%; table-layout: fixed; }
 .dataset-table th { position: sticky; top: 0; z-index: 2; text-align: left; background: var(--vscode-editorStickyScroll-background, var(--panel-alt)); color: var(--muted); border-bottom: 1px solid var(--border); padding: 9px 11px; font-weight: 600; }
+.dataset-table th[data-column-key] { position: sticky; }
+.column-resize-handle { position: absolute; top: 0; right: -4px; z-index: 3; width: 9px; height: 100%; cursor: col-resize; touch-action: none; }
+.column-resize-handle::after { content: ""; position: absolute; top: 20%; bottom: 20%; left: 4px; width: 1px; background: transparent; }
+.column-resize-handle:hover::after, .resizing-column .column-resize-handle::after { background: var(--vscode-focusBorder, var(--accent)); }
+.resizing-column { cursor: col-resize; user-select: none; }
 .table-sort { display: flex; align-items: center; gap: 6px; width: 100%; padding: 0; border: 0; background: transparent; color: inherit; font-weight: inherit; text-align: left; }
 .dataset-table td { max-width: 360px; overflow: hidden; text-overflow: ellipsis; border-bottom: 1px solid var(--border); padding: 8px 11px; }
 .dataset-table tbody tr:hover td { background: var(--row-hover); }
