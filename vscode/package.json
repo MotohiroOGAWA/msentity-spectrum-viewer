@@ -2,7 +2,7 @@
   "name": "msentity-spectrum-viewer",
   "displayName": "msentity Spectrum Viewer",
   "description": "View msentity datasets (MSDS, MSP, MGF, TSV, CSV) and similarity results (.mssim) in VS Code, powered by the msentity C++ library.",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "publisher": "motohiroogawa",
   "icon": "media/editor-icon.png",
   "license": "MIT",
@@ -129,8 +129,14 @@
         },
         "msentitySpectrumViewer.lockedCellCopyGesture": {
           "type": "string",
-          "enum": ["rightClick", "leftClick"],
-          "enumDescriptions": ["Copy with a right-click.", "Copy with a left-click."],
+          "enum": [
+            "rightClick",
+            "leftClick"
+          ],
+          "enumDescriptions": [
+            "Copy with a right-click.",
+            "Copy with a left-click."
+          ],
           "default": "rightClick",
           "description": "Mouse gesture used to copy a locked dataset cell."
         },
