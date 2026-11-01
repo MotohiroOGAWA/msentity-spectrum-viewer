@@ -220,10 +220,10 @@ async function browserTests() {
     await page.locator('[data-bin="1"]').click();
     await page.waitForFunction(() => document.querySelector(".stats strong").textContent.startsWith("2"));
     assert.ok((await page.locator(".table-scroll").innerText()).includes("C")); // score 1 included
-    await page.locator('[data-sort="cosine_similarity"]').click();
+    await page.locator('[data-sort="similarity"]').click();
     await page.waitForSelector('[aria-sort="ascending"]');
     await page.waitForFunction(() => !document.querySelector("#reload").disabled);
-    await page.locator('[data-sort="cosine_similarity"]').click();
+    await page.locator('[data-sort="similarity"]').click();
     await page.waitForFunction(() => document.querySelector(".table-scroll tbody tr td").textContent === "C");
     await page.locator("#reload").click();
     await page.waitForFunction(() => !document.querySelector("#reload").disabled);

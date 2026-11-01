@@ -81,7 +81,7 @@ test("key matching, result filters, histogram, and export", { skip }, () => {
     assert.match(failures[2], /must not overwrite an input/);
     assert.match(failures[3], /Unknown similarity parameter: bogus/);
 
-    const filters = [{ column: "cosine_similarity", operator: ">=", value: "0.8" }];
+    const filters = [{ column: "similarity", operator: ">=", value: "0.8" }];
     const subset = tmp.file("subset.mssim");
     const tsv = tmp.file("subset.tsv");
     const parquet = tmp.file("subset.parquet");
@@ -90,10 +90,10 @@ test("key matching, result filters, histogram, and export", { skip }, () => {
       { type: "page", page: 1, bins: 2 },
       { type: "page", filters, bins: 2 },
       ...[subset, tsv, parquet].map((path) => ({ type: "export", filters, path })),
-      { type: "reload", sort: { column: "cosine_similarity", direction: "asc" } },
+      { type: "reload", sort: { column: "similarity", direction: "asc" } },
       { type: "page", filters: [{ column: "SpecID", operator: "text_eq", value: "none" }] },
       { type: "page", bins: 0 },
-      { type: "page", filters: [{ column: "cosine_similarity", operator: ">", value: "bad" }] },
+      { type: "page", filters: [{ column: "similarity", operator: ">", value: "bad" }] },
       { type: "page" },
     ]);
     const pages = ofType(viewer, "similarity-page").map((m) => m.value);
@@ -101,7 +101,7 @@ test("key matching, result filters, histogram, and export", { skip }, () => {
     assert.ok(Math.abs(pages[0].statistics.q1 - 0.2236068) < 1e-6);
     assert.ok(Math.abs(pages[0].statistics.q3 - 0.6708204) < 1e-6);
     assert.equal(pages[0].rows[0].SpecID, "a");
-    assert.ok(Math.abs(pages[0].rows[0].cosine_similarity - 2 / Math.sqrt(5)) < 1e-6);
+    assert.ok(Math.abs(pages[0].rows[0].similarity - 2 / Math.sqrt(5)) < 1e-6);
     assert.equal(pages[1].rows[0].SpecID, "b");
     assert.deepEqual(pages[2].histogram.counts, [0, 1]);
     assert.equal(pages[3].rows[0].SpecID, "b");               // reload, ascending
@@ -116,7 +116,7 @@ test("key matching, result filters, histogram, and export", { skip }, () => {
     assert.deepEqual(exportedPage.rows.map((r) => r.SpecID), ["a"]);
     assert.deepEqual(exportedPage.metadata.export_view.filters, filters);
     assert.equal(exportedPage.metadata.export_view.source_rows, 2);
-    assert.match(fs.readFileSync(tsv, "utf8"), /^SpecID\tOtherID\tindex1\tindex2\tcosine_similarity\na\ta\t0\t1\t/);
+    assert.match(fs.readFileSync(tsv, "utf8"), /^SpecID\tOtherID\tindex1\tindex2\tsimilarity\na\ta\t0\t1\t/);
     assert.equal(fs.readFileSync(parquet).subarray(0, 4).toString(), "PAR1");
   } finally {
     tmp.cleanup();
@@ -132,7 +132,7 @@ test("sorted export keeps the view order and embedded spectra", { skip }, () => 
       dataset1: query, reference_path: query, path: output, parameters: { threshold: 0 } }]);
     const sorted = tmp.file("sorted.mssim");
     const viewer = resultPage(output, [{ type: "export", path: sorted,
-      sort: { column: "cosine_similarity", direction: "asc" },
+      sort: { column: "similarity", direction: "asc" },
       filters: [{ column: "index1", operator: "numeric_eq", value: "0" }] }]);
     assert.equal(ofType(viewer, "export-complete")[0].total_rows, 2);
     const back = resultPage(sorted, [{ type: "page" }, { type: "page", page: 1 }, { type: "match", row: 0 }]);
@@ -177,7 +177,7 @@ test("peaks match within the m/z tolerance in Da or ppm", { skip }, () => {
       const failure = ofType(messages, "similarity-error")[0];
       if (failure) return failure.message;
       const page = ofType(resultPage(output, [{ type: "page" }]), "similarity-page")[0].value;
-      return { score: page.rows[0].cosine_similarity, parameters: page.metadata.parameters };
+      return { score: page.rows[0].similarity, parameters: page.metadata.parameters };
     };
     assert.equal(calculate({ mz_tolerance_da: 0.001 }).score, 0);
     const either = calculate({ mz_tolerance_da: 0.001, mz_tolerance_ppm: 50 });

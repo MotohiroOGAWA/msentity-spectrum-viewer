@@ -178,7 +178,7 @@ that `text_eq` and `!=` are case-sensitive and unknown columns are errors.
 
 ```jsonc
 {
-  "columns": ["index1", "index2", "cosine_similarity", "data_index1", "data_index2"],
+  "columns": ["index1", "index2", "similarity", "data_index1", "data_index2"],
   "rows": [...], "result_indices": [0, 1],     // row numbers in the result table
   "page": 0, "total_pages": 2, "page_size": 50, "total_rows": 4, "unfiltered_rows": 4,
   "metadata": {...},                           // the result's metadata.json

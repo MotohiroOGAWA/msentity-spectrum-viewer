@@ -87,7 +87,7 @@
         </section>
         <section><div class="section-title"><h2>Comparison results</h2><span>Indices are zero-based input positions</span></div>
         <div class="table-scroll"><table><thead><tr>${value.has_matched_data ? "<th>Match</th>" : ""}${value.columns.map((column) => `<th aria-sort="${sort?.column === column ? (sort.direction === "asc" ? "ascending" : "descending") : "none"}"><button data-sort="${esc(column)}" ${disabled}>${esc(column)} ${sort?.column === column ? (sort.direction === "asc" ? "↑" : "↓") : "↕"}</button></th>`).join("")}</tr></thead>
-        <tbody>${value.rows.length ? value.rows.map((row, index) => `<tr>${value.has_matched_data ? `<td><button data-open-match="${Number(value.result_indices[index])}" ${disabled}>Open spectra</button></td>` : ""}${value.columns.map((column) => `<td>${column === "cosine_similarity" ? number(row[column]) : esc(typeof row[column] === "object" && row[column] !== null ? JSON.stringify(row[column]) : row[column])}</td>`).join("")}</tr>`).join("") : `<tr><td colspan="${value.columns.length + (value.has_matched_data ? 1 : 0)}" class="empty">No matching rows</td></tr>`}</tbody></table></div>
+        <tbody>${value.rows.length ? value.rows.map((row, index) => `<tr>${value.has_matched_data ? `<td><button data-open-match="${Number(value.result_indices[index])}" ${disabled}>Open spectra</button></td>` : ""}${value.columns.map((column) => `<td>${column === "similarity" ? number(row[column]) : esc(typeof row[column] === "object" && row[column] !== null ? JSON.stringify(row[column]) : row[column])}</td>`).join("")}</tr>`).join("") : `<tr><td colspan="${value.columns.length + (value.has_matched_data ? 1 : 0)}" class="empty">No matching rows</td></tr>`}</tbody></table></div>
         <footer><button id="previous" ${busy || value.page === 0 ? "disabled" : ""}>Previous</button><span>Page ${value.page + 1} / ${value.total_pages}</span><button id="next" ${busy || value.page + 1 >= value.total_pages ? "disabled" : ""}>Next</button></footer></section>
         <details class="metadata"><summary>Calculation metadata</summary><p>Reload reads the saved result. Recalculate from the dataset viewer to use changed spectra.</p><pre>${esc(JSON.stringify(value.metadata, null, 2))}</pre></details>
       ` : "<p>Opening similarity results…</p>"}
@@ -104,7 +104,7 @@
     document.getElementById("reload")?.addEventListener("click", () => request("reload"));
     document.getElementById("export")?.addEventListener("click", () => request("export-similarity"));
     document.getElementById("add-filter")?.addEventListener("click", () => {
-      draftFilters.push({ column: "cosine_similarity", operator: ">=", value: "0.8" }); render();
+      draftFilters.push({ column: "similarity", operator: ">=", value: "0.8" }); render();
     });
     document.querySelectorAll("[data-filter]").forEach((row) => {
       const filter = draftFilters[Number(row.dataset.filter)];
@@ -163,9 +163,9 @@
   function filterBin(i) {
     if (busy) return;
     const { edges, counts } = value.histogram;
-    filters = filters.filter((f) => f.column !== "cosine_similarity");
-    filters.push({ column: "cosine_similarity", operator: ">=", value: String(edges[i]) },
-      { column: "cosine_similarity", operator: i === counts.length - 1 ? "<=" : "<", value: String(edges[i + 1]) });
+    filters = filters.filter((f) => f.column !== "similarity");
+    filters.push({ column: "similarity", operator: ">=", value: String(edges[i]) },
+      { column: "similarity", operator: i === counts.length - 1 ? "<=" : "<", value: String(edges[i + 1]) });
     draftFilters = filters.map((f) => ({ ...f })); showFilters = true; request();
   }
   function binAt(event) {
