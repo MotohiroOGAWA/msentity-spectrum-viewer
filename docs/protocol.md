@@ -1,5 +1,17 @@
 # Viewer protocol
 
+The legacy viewers continue to use the messages below. New component
+embeddings may connect the same messages to a `ViewerController` with
+`MsEntityViewer.MessageBridge`. The bridge consumes `spectrum`,
+`spectrum-comparison`, `dataset-page`/`page`, `select-peak`, and
+`column-visibility`; applications may also call the controller directly.
+
+`select-peak` carries `{ type, peak }`, where `peak` contains `peakIndex` and
+optionally `datasetId`, `spectrumId`/`spectrumKey`, `rowId`/`globalIndex`,
+`side`, `mz`, and `intensity`. A missing/null `peak` clears selection.
+`column-visibility` carries `{ type, component, scope, visible?, hidden?,
+available? }`. These additive messages do not change existing host messages.
+
 The UI components ([`ui/`](../ui)), the host ([`host/`](../host), or any other
 program), and the backend ([`backend/`](../backend)) exchange JSON messages.
 The same messages are used on both links:

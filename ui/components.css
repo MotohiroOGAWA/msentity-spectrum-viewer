@@ -1,0 +1,19 @@
+.msv-scroll { max-width: 100%; overflow: auto; }
+.msv-dataset-table table, .msv-peaks-table table, .msv-similarity table { border-collapse: collapse; width: 100%; }
+.msv-dataset-table th, .msv-dataset-table td, .msv-peaks-table th, .msv-peaks-table td,
+.msv-similarity th, .msv-similarity td { border-bottom: 1px solid var(--vscode-panel-border, #bbb); padding: .35rem .5rem; text-align: left; }
+.msv-dataset-table button, .msv-peaks-table button { background: none; border: 0; color: inherit; cursor: pointer; font: inherit; }
+.msv-filter { display: block; margin: .4rem 0; }
+.msv-filter input { margin-left: .4rem; }
+.msv-spectrum-plot svg { display: block; max-height: 28rem; width: 100%; }
+.msv-spectrum-plot line { cursor: pointer; stroke: var(--vscode-charts-blue, #2563eb); stroke-width: 2; }
+.msv-spectrum-plot line[data-side="bottom"] { stroke: var(--vscode-charts-red, #dc2626); }
+.msv-spectrum-plot line.axis { cursor: default; stroke: currentColor; stroke-width: 1; }
+.msv-spectrum-plot line.selected { stroke: var(--vscode-focusBorder, #f59e0b); stroke-width: 5; }
+.msv-peaks-table tr.selected { background: var(--vscode-list-activeSelectionBackground, #094771); color: var(--vscode-list-activeSelectionForeground, #fff); }
+.msv-empty { align-items: center; display: flex; justify-content: center; min-height: 5rem; opacity: .7; }
+.msv-stats { display: flex; flex-wrap: wrap; gap: 1rem; margin-bottom: .5rem; }
+.msv-structure { display: block; height: auto; max-width: 100%; }
+.msv-structure-text { display: block; overflow-wrap: anywhere; padding: 1rem; text-align: center; }
+.msv-spectrum-grid { display: grid; gap: 1rem; grid-template-columns: minmax(0, 2fr) minmax(16rem, 1fr); }
+@media (max-width: 700px) { .msv-spectrum-grid { grid-template-columns: 1fr; } }
