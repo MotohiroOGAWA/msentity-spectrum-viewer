@@ -117,11 +117,9 @@
   const tableViews = new Map();
   const columnWidths = new Map();
   const resettingColumnWidths = new Set();
-  let pointerTableView = null;
-
   const tableView = datasetId => {
     const key = String(datasetId || "");
-    if (!tableViews.has(key)) tableViews.set(key, { scrollLeft: 0, windowScrollX: 0 });
+    if (!tableViews.has(key)) tableViews.set(key, { scrollLeft: 0 });
     return tableViews.get(key);
   };
   const widthsFor = datasetId => {
@@ -133,26 +131,8 @@
     const wrap = document.querySelector(".table-wrap[data-dataset-id]");
     if (wrap) {
       const view = tableView(wrap.dataset.datasetId);
-      if (pointerTableView?.datasetId === wrap.dataset.datasetId) {
-        view.scrollLeft = pointerTableView.scrollLeft;
-        view.windowScrollX = pointerTableView.windowScrollX;
-      } else {
-        view.scrollLeft = wrap.scrollLeft;
-        view.windowScrollX = window.scrollX || 0;
-      }
+      view.scrollLeft = wrap.scrollLeft;
     }
-  }
-  function beginPointerInteraction() {
-    const wrap = document.querySelector(".table-wrap[data-dataset-id]");
-    if (!wrap) return;
-    pointerTableView = {
-      datasetId: wrap.dataset.datasetId,
-      scrollLeft: wrap.scrollLeft,
-      windowScrollX: window.scrollX || 0,
-    };
-    const view = tableView(pointerTableView.datasetId);
-    view.scrollLeft = pointerTableView.scrollLeft;
-    view.windowScrollX = pointerTableView.windowScrollX;
   }
   function restoreTableView() {
     const wrap = document.querySelector(".table-wrap[data-dataset-id]");
@@ -160,26 +140,7 @@
     const datasetId = wrap.dataset.datasetId;
     const savedView = tableView(datasetId);
     const scrollLeft = savedView.scrollLeft;
-    const windowScrollX = savedView.windowScrollX || 0;
-    const needsRestore = Math.abs(wrap.scrollLeft - scrollLeft) >= 1;
     wrap.scrollLeft = scrollLeft;
-    if (typeof window.scrollTo === "function") window.scrollTo(windowScrollX, window.scrollY || 0);
-    if (scrollLeft > 0 && typeof requestAnimationFrame === "function") {
-      // The browser may clamp scrollLeft to zero while the newly inserted
-      // table is still being laid out. Keep it hidden for that frame, then
-      // restore after the fixed table/column widths have taken effect.
-      if (needsRestore) wrap.classList.add("restoring-scroll");
-      requestAnimationFrame(() => {
-        const current = document.querySelector(`.table-wrap[data-dataset-id="${CSS.escape(datasetId)}"]`);
-        if (!current) return;
-        current.scrollLeft = scrollLeft;
-        requestAnimationFrame(() => {
-          current.scrollLeft = scrollLeft;
-          if (typeof window.scrollTo === "function") window.scrollTo(windowScrollX, window.scrollY || 0);
-          current.classList.remove("restoring-scroll");
-        });
-      });
-    }
   }
   function freezeAutomaticColumnWidths() {
     if (loadingPage || resettingColumnWidths.has(activeDatasetId)) return;
@@ -417,13 +378,12 @@
         ${structurePreview ? `<div class="structure-backdrop" id="structure-backdrop"><section class="structure-preview" role="dialog" aria-modal="true" aria-labelledby="structure-title"><header><strong id="structure-title">Structure</strong><button id="close-structure" class="modal-close" aria-label="Close structure preview">×</button></header><div class="structure-canvas">${structurePreview.url ? `<img src="${esc(structurePreview.url)}" alt="Chemical structure for ${esc(structurePreview.smiles)}">` : `<span>Rendering structure…</span>`}</div><code>${esc(structurePreview.smiles)}</code></section></div>` : ""}
       </div>`;
 
-    restoreTableView();
     freezeAutomaticColumnWidths();
+    restoreTableView();
     document.querySelectorAll(".column-resize-handle").forEach(handle => handle.addEventListener("pointerdown", event => {
       event.preventDefault(); event.stopPropagation();
       const table = handle.closest("table"), headers = [...table.querySelectorAll("thead th[data-column-key]")];
       const wrap = table.closest(".table-wrap");
-      const preservedScrollLeft = wrap?.scrollLeft || 0;
       const cols = [...table.querySelectorAll("colgroup col")];
       const currentWidths = widthsFor(activeDatasetId);
       // Freeze every current automatic width on the first resize. This keeps
@@ -438,32 +398,19 @@
       const header = handle.closest("th"), key = handle.dataset.resizeColumn;
       const index = headers.indexOf(header), col = cols[index];
       const startX = event.clientX, startWidth = currentWidths.get(key);
-      let scrollFrame = 0;
-      const preserveScroll = () => {
-        if (!wrap) return;
-        wrap.scrollLeft = preservedScrollLeft;
-        tableView(wrap.dataset.datasetId).scrollLeft = preservedScrollLeft;
-        if (!scrollFrame && typeof requestAnimationFrame === "function") {
-          scrollFrame = requestAnimationFrame(() => {
-            scrollFrame = 0;
-            wrap.scrollLeft = preservedScrollLeft;
-          });
-        }
-      };
       document.body.classList.add("resizing-column");
       const move = moveEvent => {
         const width = Math.max(48, Math.round(startWidth + moveEvent.clientX - startX));
         currentWidths.set(key, width);
         col.style.width = col.style.minWidth = col.style.maxWidth = `${width}px`;
         fixTableWidth(table, currentWidths, headers.map(item => item.dataset.columnKey));
-        preserveScroll();
       };
       const finish = () => {
         document.removeEventListener("pointermove", move);
         document.removeEventListener("pointerup", finish);
         document.removeEventListener("pointercancel", finish);
         document.body.classList.remove("resizing-column");
-        preserveScroll();
+        if (wrap) tableView(wrap.dataset.datasetId).scrollLeft = wrap.scrollLeft;
       };
       document.addEventListener("pointermove", move);
       document.addEventListener("pointerup", finish);
@@ -624,7 +571,7 @@
       vscode.postMessage(viewRequest(savedPage));
     };
     document.getElementById("dataset-select")?.addEventListener("change", event => switchDataset(event.currentTarget.value));
-    document.querySelectorAll("[data-dataset-id]").forEach(el => el.addEventListener("click", () => switchDataset(el.dataset.datasetId)));
+    document.querySelectorAll(".dataset-option[data-dataset-id]").forEach(el => el.addEventListener("click", () => switchDataset(el.dataset.datasetId)));
     document.getElementById("dataset-menu")?.addEventListener("keydown", e => {
       const items = [...document.querySelectorAll("#dataset-menu button:not(:disabled)")];
       const index = items.indexOf(document.activeElement);
@@ -941,17 +888,11 @@
       render(); document.getElementById(focusTarget)?.focus();
     }
   });
-  document.addEventListener("pointerdown", beginPointerInteraction, true);
-  document.addEventListener("pointercancel", () => { pointerTableView = null; }, true);
   document.addEventListener("click", (e) => {
     if (datasetMenuOpen && !e.target.closest?.(".dataset-info")) { datasetMenuOpen = false; render(); }
     else if (moreActionsOpen && !e.target.closest?.(".more-actions")) { moreActionsOpen = false; render(); }
     else if (columnMenuOpen && !e.target.closest?.(".columns")) { columnMenuOpen = false; render(); }
     else if (filterMenuOpen && !e.target.closest?.(".filters")) { filterMenuOpen = false; render(); }
-    restoreTableView();
-    // Keep the pointerdown snapshot through every synchronous render caused
-    // by this click. Only release it after the final table has been restored.
-    pointerTableView = null;
   });
 
   let dragDepth = 0;

@@ -13,13 +13,9 @@ test("dataset table keeps horizontal scroll across page renders", () => {
   assert.match(script, /const savedView = tableView\(datasetId\)/);
   assert.match(script, /const scrollLeft = savedView\.scrollLeft/);
   assert.match(script, /wrap\.scrollLeft = scrollLeft/);
-  assert.match(script, /windowScrollX/);
-  assert.match(script, /window\.scrollTo\(windowScrollX/);
   assert.match(script, /data-dataset-id="\$\{esc\(activeDatasetId\)\}"/);
-  assert.match(script, /requestAnimationFrame\(\(\) =>/);
-  assert.match(script, /classList\.add\("restoring-scroll"\)/);
-  assert.match(script, /classList\.remove\("restoring-scroll"\)/);
-  assert.match(styles, /\.table-wrap\.restoring-scroll[^}]*visibility: hidden/);
+  assert.doesNotMatch(script, /window\.scrollTo/);
+  assert.doesNotMatch(script, /requestAnimationFrame/);
   assert.match(styles, /\.table-wrap[^}]*min-width: 0/);
   assert.match(styles, /\.viewer[^}]*overflow: hidden/);
 });
@@ -36,7 +32,7 @@ test("column widths are resizable, retained per dataset, and cleared by reload",
 test("automatic widths are frozen after the first loaded page", () => {
   assert.match(script, /function freezeAutomaticColumnWidths\(\)/);
   assert.match(script, /getBoundingClientRect\(\)\.width/);
-  assert.match(script, /restoreTableView\(\);\s*freezeAutomaticColumnWidths\(\)/);
+  assert.match(script, /freezeAutomaticColumnWidths\(\);\s*restoreTableView\(\)/);
   assert.match(script, /resettingColumnWidths\.add\(activeDatasetId\)/);
   assert.match(script, /dataset-page[\s\S]{0,240}resettingColumnWidths\.delete\(activeDatasetId\)/);
 });
@@ -48,26 +44,18 @@ test("fixed columns render with a fixed total table width without an automatic-l
   assert.doesNotMatch(styles, /\.dataset-table\.has-custom-widths[^}]*max-content/);
 });
 
-test("resizing a column preserves the current horizontal scroll position", () => {
-  assert.match(script, /const preservedScrollLeft = wrap\?\.scrollLeft \|\| 0/);
-  assert.match(script, /function|const preserveScroll =/);
-  assert.match(script, /wrap\.scrollLeft = preservedScrollLeft/);
-  assert.match(script, /tableView\(wrap\.dataset\.datasetId\)\.scrollLeft = preservedScrollLeft/);
+test("resizing a column updates in place without active scroll correction", () => {
+  assert.match(script, /tableView\(wrap\.dataset\.datasetId\)\.scrollLeft = wrap\.scrollLeft/);
   const resizeStart = script.indexOf('document.querySelectorAll(".column-resize-handle")');
   const resizeEnd = script.indexOf("const moreButton", resizeStart);
   assert.doesNotMatch(script.slice(resizeStart, resizeEnd), /\brender\(\)/);
+  assert.doesNotMatch(script.slice(resizeStart, resizeEnd), /requestAnimationFrame|wrap\.scrollLeft\s*=/);
 });
 
-test("pointer actions capture and restore horizontal position around rerenders", () => {
-  assert.match(script, /let pointerTableView = null/);
-  assert.match(script, /function beginPointerInteraction\(\)/);
-  assert.match(script, /addEventListener\("pointerdown", beginPointerInteraction, true\)/);
-  assert.match(script, /pointerTableView\?\.datasetId === wrap\.dataset\.datasetId/);
-  assert.match(script, /document\.addEventListener\("click"[\s\S]*restoreTableView\(\)/);
-  assert.match(script, /restoreTableView\(\);[\s\S]{0,240}pointerTableView = null/);
-  const pointerStart = script.indexOf("function beginPointerInteraction()");
-  const pointerEnd = script.indexOf("function restoreTableView", pointerStart);
-  assert.doesNotMatch(script.slice(pointerStart, pointerEnd), /setTimeout/);
+test("dataset switching is bound only to menu options, not the table wrapper", () => {
+  assert.match(script, /querySelectorAll\("\.dataset-option\[data-dataset-id\]"\)/);
+  assert.doesNotMatch(script, /querySelectorAll\("\[data-dataset-id\]"\)/);
+  assert.doesNotMatch(script, /document\.addEventListener\("click"[\s\S]{0,500}restoreTableView\(\)/);
 });
 
 test("page navigation keeps the current fixed table visible until new data arrives", () => {

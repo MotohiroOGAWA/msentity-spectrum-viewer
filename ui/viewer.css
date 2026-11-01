@@ -74,7 +74,6 @@ button:disabled { cursor: default; opacity: .5; }
 .checkmark { display: inline-grid; place-items: center; width: 17px; height: 17px; border: 1px solid var(--muted); border-radius: 3px; color: transparent; }
 .checkmark.checked { background: var(--button-bg); color: var(--button-fg); border-color: var(--button-bg); }
 .table-wrap { flex: 1 1 0; width: 100%; min-width: 0; min-height: 0; overflow: auto; overscroll-behavior: contain; }
-.table-wrap.restoring-scroll { visibility: hidden; }
 .table-wrap.page-loading { position: relative; pointer-events: none; }
 .table-wrap.page-loading::after { content: "Loading…"; position: sticky; left: calc(50% - 45px); bottom: 14px; display: inline-block; width: 90px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--panel); color: var(--muted); text-align: center; box-shadow: 0 2px 8px #0003; }
 .dataset-table { width: 100%; border-collapse: separate; border-spacing: 0; white-space: nowrap; }
