@@ -8,14 +8,20 @@ const styles = fs.readFileSync(path.join(__dirname, "../../ui/viewer.css"), "utf
 
 test("dataset table keeps horizontal scroll across page renders", () => {
   assert.match(script, /const tableViews = new Map\(\)/);
-  assert.match(script, /tableView\(wrap\.dataset\.datasetId\)\.scrollLeft = wrap\.scrollLeft/);
-  assert.match(script, /const scrollLeft = tableView\(datasetId\)\.scrollLeft/);
+  assert.match(script, /const view = tableView\(wrap\.dataset\.datasetId\)/);
+  assert.match(script, /view\.scrollLeft = wrap\.scrollLeft/);
+  assert.match(script, /const savedView = tableView\(datasetId\)/);
+  assert.match(script, /const scrollLeft = savedView\.scrollLeft/);
   assert.match(script, /wrap\.scrollLeft = scrollLeft/);
+  assert.match(script, /windowScrollX/);
+  assert.match(script, /window\.scrollTo\(windowScrollX/);
   assert.match(script, /data-dataset-id="\$\{esc\(activeDatasetId\)\}"/);
   assert.match(script, /requestAnimationFrame\(\(\) =>/);
   assert.match(script, /classList\.add\("restoring-scroll"\)/);
   assert.match(script, /classList\.remove\("restoring-scroll"\)/);
   assert.match(styles, /\.table-wrap\.restoring-scroll[^}]*visibility: hidden/);
+  assert.match(styles, /\.table-wrap[^}]*min-width: 0/);
+  assert.match(styles, /\.viewer[^}]*overflow: hidden/);
 });
 
 test("column widths are resizable, retained per dataset, and cleared by reload", () => {
@@ -42,6 +48,21 @@ test("fixed columns render with a fixed total table width without an automatic-l
   assert.doesNotMatch(styles, /\.dataset-table\.has-custom-widths[^}]*max-content/);
 });
 
+test("resizing a column preserves the current horizontal scroll position", () => {
+  assert.match(script, /const preservedScrollLeft = wrap\?\.scrollLeft \|\| 0/);
+  assert.match(script, /function|const preserveScroll =/);
+  assert.match(script, /wrap\.scrollLeft = preservedScrollLeft/);
+  assert.match(script, /tableView\(wrap\.dataset\.datasetId\)\.scrollLeft = preservedScrollLeft/);
+});
+
+test("pointer actions capture and restore horizontal position around rerenders", () => {
+  assert.match(script, /let pointerTableView = null/);
+  assert.match(script, /function beginPointerInteraction\(\)/);
+  assert.match(script, /addEventListener\("pointerdown", beginPointerInteraction, true\)/);
+  assert.match(script, /pointerTableView\?\.datasetId === wrap\.dataset\.datasetId/);
+  assert.match(script, /document\.addEventListener\("click"[\s\S]*restoreTableView\(\)/);
+});
+
 test("page navigation keeps the current fixed table visible until new data arrives", () => {
   const requestStart = script.indexOf("function requestPage(requested)");
   const requestEnd = script.indexOf("function toggleColumn", requestStart);
@@ -50,4 +71,13 @@ test("page navigation keeps the current fixed table visible until new data arriv
   assert.match(requestPage, /classList\.add\("page-loading"\)/);
   assert.match(requestPage, /vscode\.postMessage\(viewRequest\(target\)\)/);
   assert.match(styles, /\.table-wrap\.page-loading/);
+});
+
+test("toolbar and pagination stay visible while only the table area scrolls", () => {
+  assert.match(styles, /html, body[^}]*overflow: hidden/);
+  assert.match(styles, /#app[^}]*height: 100vh[^}]*overflow: hidden/);
+  assert.match(styles, /\.viewer[^}]*height: 100vh[^}]*flex-direction: column[^}]*overflow: hidden/);
+  assert.match(styles, /\.toolbar[^}]*flex: 0 0 auto/);
+  assert.match(styles, /\.table-wrap[^}]*flex: 1 1 0[^}]*min-height: 0[^}]*overflow: auto/);
+  assert.match(styles, /\.pagination[^}]*flex: 0 0 auto/);
 });

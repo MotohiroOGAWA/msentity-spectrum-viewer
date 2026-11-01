@@ -279,6 +279,9 @@ class MSEntityViewerProvider {
       switch (message?.type) {
         case "webview-ready":
           webviewReady = true;
+          if (!isSimilarity) webview.postMessage({ type: "viewer-config", options: { behavior: {
+            copyLockedCells: vscode.workspace.getConfiguration("msentitySpectrumViewer").get("copyLockedCells", true) !== false
+          } } });
           for (const pending of held.splice(0)) webview.postMessage(pending);
           break;
         case "ready":

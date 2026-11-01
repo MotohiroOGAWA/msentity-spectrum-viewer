@@ -4,16 +4,18 @@
   const vscode = typeof acquireVsCodeApi === "function" ? acquireVsCodeApi() : window.msentityViewerHost;
   const app = document.getElementById("app");
   const filename = app.dataset.filename || "dataset";
-  const defaultControls = { reload: true, filter: true, export: true, more: true,
+  const defaultControls = { reload: true, filter: true, export: true, more: true, editLock: true,
     metadata: true, columns: true, assignSpecId: true, structureCounts: true,
     similarity: true, loadingOptions: true, settings: true };
-  let viewerOptions = { controls: { ...defaultControls }, settings: [] };
+  let viewerOptions = { controls: { ...defaultControls }, behavior: { copyLockedCells: true }, settings: [] };
   let viewerSettings = {};
   let settingsOpen = false;
+  let editingUnlocked = false;
   function configureViewer(options = {}) {
     viewerOptions = {
       ...viewerOptions, ...options,
       controls: { ...viewerOptions.controls, ...(options.controls || {}) },
+      behavior: { ...viewerOptions.behavior, ...(options.behavior || {}) },
       settings: Array.isArray(options.settings) ? options.settings.map(item => ({ ...item })) : viewerOptions.settings,
     };
     for (const item of viewerOptions.settings) {
@@ -39,6 +41,8 @@
     similarity: '<path d="M5 20V13m7 7V4m7 16V9" stroke-width="3"/>',
     structureCount: '<circle cx="7" cy="6.5" r="3.5"/><path d="m9.6 9.1 2.4 2.4M3 20v-4h2.7v4M7.2 20v-7h2.7v7M11.4 20v-5h2.7v5M2 20h13"/><path d="m18.5 11 3.5 2v4l-3.5 2-3.5-2v-4l3.5-2Z"/><circle cx="18.5" cy="15" r="1.5"/>',
     settings: '<circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2.5"/><path d="M12 2v4m0 12v4M2 12h4m12 0h4M4.9 4.9l2.8 2.8m8.6 8.6 2.8 2.8M19.1 4.9l-2.8 2.8m-8.6 8.6-2.8 2.8"/>',
+    lock: '<rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/>',
+    unlock: '<rect x="5" y="10" width="14" height="11" rx="2"/><path d="M16 10V7a4 4 0 0 0-7.5-2"/>',
   })[name]}</svg>`;
 
   let value = null;
@@ -113,10 +117,11 @@
   const tableViews = new Map();
   const columnWidths = new Map();
   const resettingColumnWidths = new Set();
+  let pointerTableView = null;
 
   const tableView = datasetId => {
     const key = String(datasetId || "");
-    if (!tableViews.has(key)) tableViews.set(key, { scrollLeft: 0 });
+    if (!tableViews.has(key)) tableViews.set(key, { scrollLeft: 0, windowScrollX: 0 });
     return tableViews.get(key);
   };
   const widthsFor = datasetId => {
@@ -126,25 +131,52 @@
   };
   function captureTableView() {
     const wrap = document.querySelector(".table-wrap[data-dataset-id]");
-    if (wrap) tableView(wrap.dataset.datasetId).scrollLeft = wrap.scrollLeft;
+    if (wrap) {
+      const view = tableView(wrap.dataset.datasetId);
+      if (pointerTableView?.datasetId === wrap.dataset.datasetId) {
+        view.scrollLeft = pointerTableView.scrollLeft;
+        view.windowScrollX = pointerTableView.windowScrollX;
+      } else {
+        view.scrollLeft = wrap.scrollLeft;
+        view.windowScrollX = window.scrollX || 0;
+      }
+    }
+  }
+  function beginPointerInteraction() {
+    const wrap = document.querySelector(".table-wrap[data-dataset-id]");
+    if (!wrap) return;
+    pointerTableView = {
+      datasetId: wrap.dataset.datasetId,
+      scrollLeft: wrap.scrollLeft,
+      windowScrollX: window.scrollX || 0,
+    };
+    const view = tableView(pointerTableView.datasetId);
+    view.scrollLeft = pointerTableView.scrollLeft;
+    view.windowScrollX = pointerTableView.windowScrollX;
+    setTimeout(() => { pointerTableView = null; }, 0);
   }
   function restoreTableView() {
     const wrap = document.querySelector(".table-wrap[data-dataset-id]");
     if (!wrap) return;
     const datasetId = wrap.dataset.datasetId;
-    const scrollLeft = tableView(datasetId).scrollLeft;
+    const savedView = tableView(datasetId);
+    const scrollLeft = savedView.scrollLeft;
+    const windowScrollX = savedView.windowScrollX || 0;
+    const needsRestore = Math.abs(wrap.scrollLeft - scrollLeft) >= 1;
     wrap.scrollLeft = scrollLeft;
+    if (typeof window.scrollTo === "function") window.scrollTo(windowScrollX, window.scrollY || 0);
     if (scrollLeft > 0 && typeof requestAnimationFrame === "function") {
       // The browser may clamp scrollLeft to zero while the newly inserted
       // table is still being laid out. Keep it hidden for that frame, then
       // restore after the fixed table/column widths have taken effect.
-      wrap.classList.add("restoring-scroll");
+      if (needsRestore) wrap.classList.add("restoring-scroll");
       requestAnimationFrame(() => {
         const current = document.querySelector(`.table-wrap[data-dataset-id="${CSS.escape(datasetId)}"]`);
         if (!current) return;
         current.scrollLeft = scrollLeft;
         requestAnimationFrame(() => {
           current.scrollLeft = scrollLeft;
+          if (typeof window.scrollTo === "function") window.scrollTo(windowScrollX, window.scrollY || 0);
           current.classList.remove("restoring-scroll");
         });
       });
@@ -375,11 +407,12 @@
             </div>
             ${columnMenu}
           </div>` : ""}
+          ${showControl("editLock") ? `<button class="secondary-button edit-lock-button ${editingUnlocked ? "unlocked" : "locked"}" id="edit-lock-button" aria-pressed="${editingUnlocked}" title="${editingUnlocked ? "Lock cells to prevent editing" : "Unlock cells to allow editing"}" aria-label="${editingUnlocked ? "Lock table editing" : "Unlock table editing"}">${toolbarIcon(editingUnlocked ? "unlock" : "lock")}</button>` : ""}
         </div>
         ${metadataForm()}
         ${settingsForm()}
         <div class="table-wrap" data-dataset-id="${esc(activeDatasetId)}"><table class="dataset-table ${hasFixedWidths ? "has-custom-widths" : ""}"${tableWidthStyle(widths, columnKeys)}><colgroup>${columnKeys.map(key => `<col data-column-key="${esc(key)}"${columnStyle(widths, key)}>`).join("")}</colgroup><thead><tr><th class="row-column" data-column-key="row">${resizeHandle("row")}Row</th><th class="spectrum-column" data-column-key="spectrum">${resizeHandle("spectrum")}Spectrum</th>${showStructureColumn ? `<th class="structure-column" data-column-key="structure">${resizeHandle("structure")}Structure</th>` : ""}${selectedColumns.map((c) => { const item = sortFor(c), key = `metadata:${c}`; return `<th data-column-key="${esc(key)}"><button class="table-sort" data-sort-column="${esc(c)}" title="Click: ascending → descending → remove sort">${esc(c)}<span>${item ? `${item.priority}${item.direction === "asc" ? "▲" : "▼"}` : ""}</span></button>${resizeHandle(key)}</th>`; }).join("")}</tr></thead><tbody>
-          ${pageRows.length ? pageRows.map(({ row, index }) => { const smiles = smilesColumn ? String(row?.[smilesColumn] ?? "").trim() : ""; return `<tr class="${selectedSpectrumIndex === index ? "selected-record" : ""}"><td class="row-column">${rowOffset() + index + 1}</td><td class="spectrum-column"><button class="spectrum-button" data-spectrum-index="${index}" title="Show spectrum ${rowOffset() + index + 1}"><svg viewBox="0 0 28 22"><path d="M2 19h24M4 18V13m4 5V7m4 11v-4m4 4V3m4 15V9m4 9v-7"/></svg></button></td>${showStructureColumn ? `<td class="structure-column">${smiles ? `<button class="structure-button" data-structure-index="${index}" aria-label="View structure" title="View structure"><svg viewBox="0 0 28 24" aria-hidden="true" focusable="false"><path class="structure-edges" d="M14 3 21.8 7.5v9L14 21l-7.8-4.5v-9Z"/><g class="structure-nodes"><circle cx="14" cy="3" r="2.1"/><circle cx="21.8" cy="7.5" r="2.1"/><circle cx="21.8" cy="16.5" r="2.1"/><circle cx="14" cy="21" r="2.1"/><circle cx="6.2" cy="16.5" r="2.1"/><circle cx="6.2" cy="7.5" r="2.1"/></g></svg></button>` : ""}</td>` : ""}${selectedColumns.map((c) => `<td tabindex="0" data-edit-row="${index}" data-edit-column="${esc(c)}" title="Double-click or press Enter to edit: ${esc(display(row?.[c]))}">${esc(display(row?.[c]))}</td>`).join("")}</tr>`; }).join("") : `<tr><td colspan="${selectedColumns.length + 2 + (showStructureColumn ? 1 : 0)}" class="empty">No spectra match the filters.</td></tr>`}
+          ${pageRows.length ? pageRows.map(({ row, index }) => { const smiles = smilesColumn ? String(row?.[smilesColumn] ?? "").trim() : ""; return `<tr class="${selectedSpectrumIndex === index ? "selected-record" : ""}"><td class="row-column">${rowOffset() + index + 1}</td><td class="spectrum-column"><button class="spectrum-button" data-spectrum-index="${index}" title="Show spectrum ${rowOffset() + index + 1}"><svg viewBox="0 0 28 22"><path d="M2 19h24M4 18V13m4 5V7m4 11v-4m4 4V3m4 15V9m4 9v-7"/></svg></button></td>${showStructureColumn ? `<td class="structure-column">${smiles ? `<button class="structure-button" data-structure-index="${index}" aria-label="View structure" title="View structure"><svg viewBox="0 0 28 24" aria-hidden="true" focusable="false"><path class="structure-edges" d="M14 3 21.8 7.5v9L14 21l-7.8-4.5v-9Z"/><g class="structure-nodes"><circle cx="14" cy="3" r="2.1"/><circle cx="21.8" cy="7.5" r="2.1"/><circle cx="21.8" cy="16.5" r="2.1"/><circle cx="14" cy="21" r="2.1"/><circle cx="6.2" cy="16.5" r="2.1"/><circle cx="6.2" cy="7.5" r="2.1"/></g></svg></button>` : ""}</td>` : ""}${selectedColumns.map((c) => `<td ${editingUnlocked ? 'tabindex="0"' : ""} data-edit-row="${index}" data-edit-column="${esc(c)}" class="${editingUnlocked ? "editable-cell" : "locked-cell"}" title="${editingUnlocked ? `Double-click or press Enter to edit: ${esc(display(row?.[c]))}` : "Editing is locked"}">${esc(display(row?.[c]))}</td>`).join("")}</tr>`; }).join("") : `<tr><td colspan="${selectedColumns.length + 2 + (showStructureColumn ? 1 : 0)}" class="empty">No spectra match the filters.</td></tr>`}
         </tbody></table></div>
         <div class="pagination"><span>${start}–${end} of ${totalRows()}</span><div class="page-controls"><button id="prev-page" ${page() === 0 || loadingPage ? "disabled" : ""}>‹</button><span><input id="page-input" type="number" min="1" max="${pageCount()}" value="${page() + 1}" ${loadingPage ? "disabled" : ""}/> / ${pageCount()}</span><button id="next-page" ${page() >= pageCount() - 1 || loadingPage ? "disabled" : ""}>›</button></div><span>${loadingPage ? "Loading…" : `${pageSize()} rows/page`}</span></div>
         ${structurePreview ? `<div class="structure-backdrop" id="structure-backdrop"><section class="structure-preview" role="dialog" aria-modal="true" aria-labelledby="structure-title"><header><strong id="structure-title">Structure</strong><button id="close-structure" class="modal-close" aria-label="Close structure preview">×</button></header><div class="structure-canvas">${structurePreview.url ? `<img src="${esc(structurePreview.url)}" alt="Chemical structure for ${esc(structurePreview.smiles)}">` : `<span>Rendering structure…</span>`}</div><code>${esc(structurePreview.smiles)}</code></section></div>` : ""}
@@ -390,6 +423,8 @@
     document.querySelectorAll(".column-resize-handle").forEach(handle => handle.addEventListener("pointerdown", event => {
       event.preventDefault(); event.stopPropagation();
       const table = handle.closest("table"), headers = [...table.querySelectorAll("thead th[data-column-key]")];
+      const wrap = table.closest(".table-wrap");
+      const preservedScrollLeft = wrap?.scrollLeft || 0;
       const cols = [...table.querySelectorAll("colgroup col")];
       const currentWidths = widthsFor(activeDatasetId);
       // Freeze every current automatic width on the first resize. This keeps
@@ -404,18 +439,32 @@
       const header = handle.closest("th"), key = handle.dataset.resizeColumn;
       const index = headers.indexOf(header), col = cols[index];
       const startX = event.clientX, startWidth = currentWidths.get(key);
+      let scrollFrame = 0;
+      const preserveScroll = () => {
+        if (!wrap) return;
+        wrap.scrollLeft = preservedScrollLeft;
+        tableView(wrap.dataset.datasetId).scrollLeft = preservedScrollLeft;
+        if (!scrollFrame && typeof requestAnimationFrame === "function") {
+          scrollFrame = requestAnimationFrame(() => {
+            scrollFrame = 0;
+            wrap.scrollLeft = preservedScrollLeft;
+          });
+        }
+      };
       document.body.classList.add("resizing-column");
       const move = moveEvent => {
         const width = Math.max(48, Math.round(startWidth + moveEvent.clientX - startX));
         currentWidths.set(key, width);
         col.style.width = col.style.minWidth = col.style.maxWidth = `${width}px`;
         fixTableWidth(table, currentWidths, headers.map(item => item.dataset.columnKey));
+        preserveScroll();
       };
       const finish = () => {
         document.removeEventListener("pointermove", move);
         document.removeEventListener("pointerup", finish);
         document.removeEventListener("pointercancel", finish);
         document.body.classList.remove("resizing-column");
+        preserveScroll();
       };
       document.addEventListener("pointermove", move);
       document.addEventListener("pointerup", finish);
@@ -437,6 +486,10 @@
         e.preventDefault(); moreActionsOpen = true; columnMenuOpen = false; filterMenuOpen = false; render();
         const items = menuItems(); (e.key === "ArrowUp" ? items.at(-1) : items[0])?.focus();
       }
+    });
+    document.getElementById("edit-lock-button")?.addEventListener("click", () => {
+      editingUnlocked = !editingUnlocked;
+      render();
     });
     document.getElementById("more-actions-menu")?.addEventListener("keydown", (e) => {
       const items = menuItems(); const index = items.indexOf(document.activeElement);
@@ -471,13 +524,25 @@
     document.getElementById("remove-dataset")?.addEventListener("click", () => { datasetMenuOpen = false; render(); vscode.postMessage({ type: "remove-dataset", datasetId: activeDatasetId }); });
     document.querySelectorAll("[data-edit-row]").forEach(el => {
       const edit = () => {
-        if (loadingPage) return;
+        if (loadingPage || !editingUnlocked) return;
         const index = Number(el.dataset.editRow);
         vscode.postMessage({ type: "edit-cell", datasetId: activeDatasetId,
           rowId: value.row_ids[index], column: el.dataset.editColumn, value: rows()[index][el.dataset.editColumn] });
       };
       el.addEventListener("dblclick", edit);
       el.addEventListener("keydown", event => { if (event.key === "Enter") { event.preventDefault(); edit(); } });
+      el.addEventListener("click", async () => {
+        if (editingUnlocked || viewerOptions.behavior.copyLockedCells === false) return;
+        const index = Number(el.dataset.editRow);
+        const cellValue = rows()[index]?.[el.dataset.editColumn];
+        const text = cellValue == null ? "" : typeof cellValue === "object" ? JSON.stringify(cellValue) : String(cellValue);
+        try {
+          await navigator.clipboard.writeText(text);
+          vscode.postMessage({ type: "copy-notification", message: `Copied ${el.dataset.editColumn}.` });
+        } catch (error) {
+          vscode.postMessage({ type: "clipboard-error", message: error?.message || "Could not copy the cell value." });
+        }
+      });
     });
 
     document.getElementById("add-column-toggle")?.addEventListener("click", () => {
@@ -869,11 +934,13 @@
       render(); document.getElementById(focusTarget)?.focus();
     }
   });
+  document.addEventListener("pointerdown", beginPointerInteraction, true);
   document.addEventListener("click", (e) => {
     if (datasetMenuOpen && !e.target.closest?.(".dataset-info")) { datasetMenuOpen = false; render(); }
     else if (moreActionsOpen && !e.target.closest?.(".more-actions")) { moreActionsOpen = false; render(); }
     else if (columnMenuOpen && !e.target.closest?.(".columns")) { columnMenuOpen = false; render(); }
     else if (filterMenuOpen && !e.target.closest?.(".filters")) { filterMenuOpen = false; render(); }
+    restoreTableView();
   });
 
   let dragDepth = 0;

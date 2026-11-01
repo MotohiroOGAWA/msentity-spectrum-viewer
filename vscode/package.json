@@ -122,6 +122,11 @@
           "maximum": 500,
           "description": "Number of spectra loaded per page."
         },
+        "msentitySpectrumViewer.copyLockedCells": {
+          "type": "boolean",
+          "default": true,
+          "description": "Copy a dataset cell value to the clipboard when the cell is clicked while table editing is locked."
+        },
         "msentitySpectrumViewer.loading.allowDuplicateColumns": {
           "type": "boolean",
           "default": false,
