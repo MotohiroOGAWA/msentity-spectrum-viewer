@@ -4,6 +4,26 @@
   const vscode = typeof acquireVsCodeApi === "function" ? acquireVsCodeApi() : window.msentityViewerHost;
   const app = document.getElementById("app");
   const filename = app.dataset.filename || "dataset";
+  const defaultControls = { reload: true, filter: true, export: true, more: true,
+    metadata: true, columns: true, assignSpecId: true, structureCounts: true,
+    similarity: true, loadingOptions: true, settings: true };
+  let viewerOptions = { controls: { ...defaultControls }, settings: [] };
+  let viewerSettings = {};
+  let settingsOpen = false;
+  function configureViewer(options = {}) {
+    viewerOptions = {
+      ...viewerOptions, ...options,
+      controls: { ...viewerOptions.controls, ...(options.controls || {}) },
+      settings: Array.isArray(options.settings) ? options.settings.map(item => ({ ...item })) : viewerOptions.settings,
+    };
+    for (const item of viewerOptions.settings) {
+      if (!(item.id in viewerSettings)) viewerSettings[item.id] = item.value ?? item.defaultValue ?? (item.type === "boolean" ? false : "");
+      if (item.value !== undefined) viewerSettings[item.id] = item.value;
+    }
+    if (options.values) viewerSettings = { ...viewerSettings, ...options.values };
+  }
+  configureViewer(window.msentityViewerOptions || {});
+  const showControl = name => viewerOptions.controls[name] !== false;
 
   const toolbarIcon = name => `<svg class="toolbar-icon icon-${name}" viewBox="0 0 24 24" aria-hidden="true" focusable="false">${({
     add: '<path d="M12 4v16M4 12h16"/>',
@@ -48,6 +68,19 @@
       Reload or closing the viewer discards changes that have not been exported.</p>
       <button id="apply-metadata" ${metadataBusy ? "disabled" : ""}>Apply</button>
       <button id="cancel-metadata">Cancel</button>
+    </section>`;
+  }
+
+  function settingsForm() {
+    if (!settingsOpen) return "";
+    const visible = viewerOptions.settings.filter(item => item.hidden !== true);
+    return `<section class="viewer-settings" aria-label="Viewer settings"><header><h3>Settings</h3><button id="close-viewer-settings" aria-label="Close settings">×</button></header>
+      ${visible.length ? visible.map(item => {
+        const id = esc(item.id), value = viewerSettings[item.id];
+        if (item.type === "boolean") return `<label><input type="checkbox" data-viewer-setting="${id}" ${value ? "checked" : ""}> ${esc(item.label || item.id)}</label>`;
+        if (item.type === "select") return `<label>${esc(item.label || item.id)}<select data-viewer-setting="${id}">${(item.options || []).map(option => { const optionValue = typeof option === "object" ? option.value : option, label = typeof option === "object" ? option.label : option; return `<option value="${esc(optionValue)}" ${String(value) === String(optionValue) ? "selected" : ""}>${esc(label)}</option>`; }).join("")}</select></label>`;
+        return `<label>${esc(item.label || item.id)}<input data-viewer-setting="${id}" type="${item.type === "number" ? "number" : "text"}" value="${esc(value)}" ${item.min == null ? "" : `min="${esc(item.min)}"`} ${item.max == null ? "" : `max="${esc(item.max)}"`} ${item.step == null ? "" : `step="${esc(item.step)}"`}></label>`;
+      }).join("") : "<p>No visible settings.</p>"}
     </section>`;
   }
 
@@ -97,7 +130,25 @@
   }
   function restoreTableView() {
     const wrap = document.querySelector(".table-wrap[data-dataset-id]");
-    if (wrap) wrap.scrollLeft = tableView(wrap.dataset.datasetId).scrollLeft;
+    if (!wrap) return;
+    const datasetId = wrap.dataset.datasetId;
+    const scrollLeft = tableView(datasetId).scrollLeft;
+    wrap.scrollLeft = scrollLeft;
+    if (scrollLeft > 0 && typeof requestAnimationFrame === "function") {
+      // The browser may clamp scrollLeft to zero while the newly inserted
+      // table is still being laid out. Keep it hidden for that frame, then
+      // restore after the fixed table/column widths have taken effect.
+      wrap.classList.add("restoring-scroll");
+      requestAnimationFrame(() => {
+        const current = document.querySelector(`.table-wrap[data-dataset-id="${CSS.escape(datasetId)}"]`);
+        if (!current) return;
+        current.scrollLeft = scrollLeft;
+        requestAnimationFrame(() => {
+          current.scrollLeft = scrollLeft;
+          current.classList.remove("restoring-scroll");
+        });
+      });
+    }
   }
   function freezeAutomaticColumnWidths() {
     if (loadingPage || resettingColumnWidths.has(activeDatasetId)) return;
@@ -112,11 +163,22 @@
       cols[index].style.width = cols[index].style.minWidth = cols[index].style.maxWidth = `${width}px`;
     }
     table.classList.add("has-custom-widths");
+    fixTableWidth(table, widths, headers.map(header => header.dataset.columnKey));
   }
   const columnStyle = (widths, key) => {
     const width = widths.get(key);
     return Number.isFinite(width) ? ` style="width:${width}px;min-width:${width}px;max-width:${width}px"` : "";
   };
+  const tableWidthStyle = (widths, keys) => {
+    if (!keys.length || !keys.every(key => Number.isFinite(widths.get(key)))) return "";
+    const width = keys.reduce((sum, key) => sum + widths.get(key), 0);
+    return ` style="width:${width}px;min-width:${width}px"`;
+  };
+  function fixTableWidth(table, widths, keys) {
+    if (!keys.length || !keys.every(key => Number.isFinite(widths.get(key)))) return;
+    const width = keys.reduce((sum, key) => sum + widths.get(key), 0);
+    table.style.width = table.style.minWidth = `${width}px`;
+  }
   const resizeHandle = key => `<span class="column-resize-handle" data-resize-column="${esc(key)}" title="Drag to resize column" aria-hidden="true"></span>`;
 
   const esc = (v) => String(v ?? "")
@@ -171,9 +233,20 @@
   function requestPage(requested) {
     const target = Math.min(pageCount() - 1, Math.max(0, Number(requested) || 0));
     if (target === page() || loadingPage) return;
+    captureTableView();
     loadingPage = true;
     selectedSpectrumIndex = null;
-    render();
+    // Keep the current table in place while the next page is fetched. Replacing
+    // it here would briefly expose the browser's default table layout before
+    // the saved widths are applied to the incoming page.
+    const wrap = document.querySelector(".table-wrap");
+    wrap?.classList.add("page-loading");
+    wrap?.setAttribute("aria-busy", "true");
+    for (const control of [document.getElementById("prev-page"), document.getElementById("next-page"), document.getElementById("page-input")]) {
+      if (control) control.disabled = true;
+    }
+    const pageStatus = document.querySelector(".pagination > :last-child");
+    if (pageStatus) pageStatus.textContent = "Loading…";
     vscode.postMessage(viewRequest(target));
   }
 
@@ -230,6 +303,7 @@
     };
     const widths = widthsFor(activeDatasetId);
     const columnKeys = ["row", "spectrum", ...(showStructureColumn ? ["structure"] : []), ...selectedColumns.map(c => `metadata:${c}`)];
+    const hasFixedWidths = columnKeys.length > 0 && columnKeys.every(key => Number.isFinite(widths.get(key)));
 
     const columnMenu = columnMenuOpen ? `
       <div class="column-menu" id="column-menu">
@@ -282,28 +356,29 @@
             </div>
           </div>
           <div class="toolbar-group view-actions">
-            <button class="secondary-button" id="reload-button" title="Reload dataset from disk">${toolbarIcon("reload")}<span>Reload</span></button>
-            <div class="filters"><button class="secondary-button" id="filter-button" aria-expanded="${filterMenuOpen}" aria-controls="filter-menu">${toolbarIcon("filter")}<span class="menu-action-label">Filter</span>${filterCount(filters) ? ` <span class="filter-count">${filterCount(filters)}</span>` : ""}</button>${filterMenu}</div>
-            <button class="secondary-button" id="export-button" ${exporting || loadingPage || metadataBusy ? "disabled" : ""} title="Export dataset (Ctrl+S)">${toolbarIcon("export")}<span class="menu-action-label">${exporting ? `Exporting…${exportProgress == null ? "" : ` ${exportProgress.toFixed(1)}%`}` : "Export"}</span></button>
+            ${showControl("reload") ? `<button class="secondary-button" id="reload-button" title="Reload dataset from disk">${toolbarIcon("reload")}<span>Reload</span></button>` : ""}
+            ${showControl("filter") ? `<div class="filters"><button class="secondary-button" id="filter-button" aria-expanded="${filterMenuOpen}" aria-controls="filter-menu">${toolbarIcon("filter")}<span class="menu-action-label">Filter</span>${filterCount(filters) ? ` <span class="filter-count">${filterCount(filters)}</span>` : ""}</button>${filterMenu}</div>` : ""}
+            ${showControl("export") ? `<button class="secondary-button" id="export-button" ${exporting || loadingPage || metadataBusy ? "disabled" : ""} title="Export dataset (Ctrl+S)">${toolbarIcon("export")}<span class="menu-action-label">${exporting ? `Exporting…${exportProgress == null ? "" : ` ${exportProgress.toFixed(1)}%`}` : "Export"}</span></button>` : ""}
           </div>
-          <div class="more-actions columns">
+          ${showControl("more") ? `<div class="more-actions columns">
             <button class="secondary-button" id="more-actions-button" aria-haspopup="menu" aria-controls="more-actions-menu" aria-expanded="${moreActionsOpen}"><span>More ...</span></button>
             <div id="more-actions-menu" class="more-actions-menu" role="menu" aria-label="Dataset actions" ${moreActionsOpen ? "" : "hidden"}>
-              <button class="more-action" role="menuitem" id="metadata-button" ${loadingPage ? "disabled" : ""}>${toolbarIcon("metadata")}<span class="menu-action-label">Metadata</span></button>
-              <button class="more-action" role="menuitem" id="columns-button" aria-expanded="${columnMenuOpen}" aria-controls="column-menu">${toolbarIcon("columns")}<span class="menu-action-label">Columns</span></button>
-              <button class="more-action" role="menuitem" id="assign-spec-id-button" ${assigningSpecId || loadingPage || exporting ? "disabled" : ""}>${toolbarIcon("specid")}<span class="menu-action-label">${assigningSpecId ? "Assigning SpecID…" : "Assign SpecID"}</span></button>
-              ${chemistryCapabilities.structure_count ? `<button class="more-action" role="menuitem" id="structure-counts-button" ${calculatingStructureCounts || loadingPage ? "disabled" : ""}>${toolbarIcon("structureCount")}<span class="menu-action-label">${calculatingStructureCounts ? "Counting structures…" : "Count SMILES and structures"}</span></button>` : ""}
+              ${showControl("metadata") ? `<button class="more-action" role="menuitem" id="metadata-button" ${loadingPage ? "disabled" : ""}>${toolbarIcon("metadata")}<span class="menu-action-label">Metadata</span></button>` : ""}
+              ${showControl("columns") ? `<button class="more-action" role="menuitem" id="columns-button" aria-expanded="${columnMenuOpen}" aria-controls="column-menu">${toolbarIcon("columns")}<span class="menu-action-label">Columns</span></button>` : ""}
+              ${showControl("assignSpecId") ? `<button class="more-action" role="menuitem" id="assign-spec-id-button" ${assigningSpecId || loadingPage || exporting ? "disabled" : ""}>${toolbarIcon("specid")}<span class="menu-action-label">${assigningSpecId ? "Assigning SpecID…" : "Assign SpecID"}</span></button>` : ""}
+              ${showControl("structureCounts") && chemistryCapabilities.structure_count ? `<button class="more-action" role="menuitem" id="structure-counts-button" ${calculatingStructureCounts || loadingPage ? "disabled" : ""}>${toolbarIcon("structureCount")}<span class="menu-action-label">${calculatingStructureCounts ? "Counting structures…" : "Count SMILES and structures"}</span></button>` : ""}
               <div class="more-actions-divider" role="separator"></div>
-              <button class="more-action" role="menuitem" id="similarity-button" ${calculatingSimilarity || datasetOptions.length < 1 ? "disabled" : ""} title="Run a library search or compare matching metadata keys">${toolbarIcon("similarity")}<span class="menu-action-label">${calculatingSimilarity ? `Calculating…${similarityProgress == null ? "" : ` ${similarityProgress.toFixed(1)}%`}` : "Calculate similarity"}</span></button>
+              ${showControl("similarity") ? `<button class="more-action" role="menuitem" id="similarity-button" ${calculatingSimilarity || datasetOptions.length < 1 ? "disabled" : ""} title="Run a library search or compare matching metadata keys">${toolbarIcon("similarity")}<span class="menu-action-label">${calculatingSimilarity ? `Calculating…${similarityProgress == null ? "" : ` ${similarityProgress.toFixed(1)}%`}` : "Calculate similarity"}</span></button>` : ""}
               <div class="more-actions-divider" role="separator"></div>
-              <button class="more-action" role="menuitem" id="loading-options-button">${toolbarIcon("reload")}<span class="menu-action-label">Loading options and reload</span></button>
-              <button class="more-action" role="menuitem" id="settings-button">${toolbarIcon("settings")}<span class="menu-action-label">Settings</span></button>
+              ${showControl("loadingOptions") ? `<button class="more-action" role="menuitem" id="loading-options-button">${toolbarIcon("reload")}<span class="menu-action-label">Loading options and reload</span></button>` : ""}
+              ${showControl("settings") ? `<button class="more-action" role="menuitem" id="settings-button">${toolbarIcon("settings")}<span class="menu-action-label">Settings</span></button>` : ""}
             </div>
             ${columnMenu}
-          </div>
+          </div>` : ""}
         </div>
         ${metadataForm()}
-        <div class="table-wrap" data-dataset-id="${esc(activeDatasetId)}"><table class="dataset-table ${widths.size ? "has-custom-widths" : ""}"><colgroup>${columnKeys.map(key => `<col data-column-key="${esc(key)}"${columnStyle(widths, key)}>`).join("")}</colgroup><thead><tr><th class="row-column" data-column-key="row">${resizeHandle("row")}Row</th><th class="spectrum-column" data-column-key="spectrum">${resizeHandle("spectrum")}Spectrum</th>${showStructureColumn ? `<th class="structure-column" data-column-key="structure">${resizeHandle("structure")}Structure</th>` : ""}${selectedColumns.map((c) => { const item = sortFor(c), key = `metadata:${c}`; return `<th data-column-key="${esc(key)}"><button class="table-sort" data-sort-column="${esc(c)}" title="Click: ascending → descending → remove sort">${esc(c)}<span>${item ? `${item.priority}${item.direction === "asc" ? "▲" : "▼"}` : ""}</span></button>${resizeHandle(key)}</th>`; }).join("")}</tr></thead><tbody>
+        ${settingsForm()}
+        <div class="table-wrap" data-dataset-id="${esc(activeDatasetId)}"><table class="dataset-table ${hasFixedWidths ? "has-custom-widths" : ""}"${tableWidthStyle(widths, columnKeys)}><colgroup>${columnKeys.map(key => `<col data-column-key="${esc(key)}"${columnStyle(widths, key)}>`).join("")}</colgroup><thead><tr><th class="row-column" data-column-key="row">${resizeHandle("row")}Row</th><th class="spectrum-column" data-column-key="spectrum">${resizeHandle("spectrum")}Spectrum</th>${showStructureColumn ? `<th class="structure-column" data-column-key="structure">${resizeHandle("structure")}Structure</th>` : ""}${selectedColumns.map((c) => { const item = sortFor(c), key = `metadata:${c}`; return `<th data-column-key="${esc(key)}"><button class="table-sort" data-sort-column="${esc(c)}" title="Click: ascending → descending → remove sort">${esc(c)}<span>${item ? `${item.priority}${item.direction === "asc" ? "▲" : "▼"}` : ""}</span></button>${resizeHandle(key)}</th>`; }).join("")}</tr></thead><tbody>
           ${pageRows.length ? pageRows.map(({ row, index }) => { const smiles = smilesColumn ? String(row?.[smilesColumn] ?? "").trim() : ""; return `<tr class="${selectedSpectrumIndex === index ? "selected-record" : ""}"><td class="row-column">${rowOffset() + index + 1}</td><td class="spectrum-column"><button class="spectrum-button" data-spectrum-index="${index}" title="Show spectrum ${rowOffset() + index + 1}"><svg viewBox="0 0 28 22"><path d="M2 19h24M4 18V13m4 5V7m4 11v-4m4 4V3m4 15V9m4 9v-7"/></svg></button></td>${showStructureColumn ? `<td class="structure-column">${smiles ? `<button class="structure-button" data-structure-index="${index}" aria-label="View structure" title="View structure"><svg viewBox="0 0 28 24" aria-hidden="true" focusable="false"><path class="structure-edges" d="M14 3 21.8 7.5v9L14 21l-7.8-4.5v-9Z"/><g class="structure-nodes"><circle cx="14" cy="3" r="2.1"/><circle cx="21.8" cy="7.5" r="2.1"/><circle cx="21.8" cy="16.5" r="2.1"/><circle cx="14" cy="21" r="2.1"/><circle cx="6.2" cy="16.5" r="2.1"/><circle cx="6.2" cy="7.5" r="2.1"/></g></svg></button>` : ""}</td>` : ""}${selectedColumns.map((c) => `<td tabindex="0" data-edit-row="${index}" data-edit-column="${esc(c)}" title="Double-click or press Enter to edit: ${esc(display(row?.[c]))}">${esc(display(row?.[c]))}</td>`).join("")}</tr>`; }).join("") : `<tr><td colspan="${selectedColumns.length + 2 + (showStructureColumn ? 1 : 0)}" class="empty">No spectra match the filters.</td></tr>`}
         </tbody></table></div>
         <div class="pagination"><span>${start}–${end} of ${totalRows()}</span><div class="page-controls"><button id="prev-page" ${page() === 0 || loadingPage ? "disabled" : ""}>‹</button><span><input id="page-input" type="number" min="1" max="${pageCount()}" value="${page() + 1}" ${loadingPage ? "disabled" : ""}/> / ${pageCount()}</span><button id="next-page" ${page() >= pageCount() - 1 || loadingPage ? "disabled" : ""}>›</button></div><span>${loadingPage ? "Loading…" : `${pageSize()} rows/page`}</span></div>
@@ -325,6 +400,7 @@
         cols[headerIndex].style.width = cols[headerIndex].style.minWidth = cols[headerIndex].style.maxWidth = `${frozenWidth}px`;
       }
       table.classList.add("has-custom-widths");
+      fixTableWidth(table, currentWidths, headers.map(item => item.dataset.columnKey));
       const header = handle.closest("th"), key = handle.dataset.resizeColumn;
       const index = headers.indexOf(header), col = cols[index];
       const startX = event.clientX, startWidth = currentWidths.get(key);
@@ -333,6 +409,7 @@
         const width = Math.max(48, Math.round(startWidth + moveEvent.clientX - startX));
         currentWidths.set(key, width);
         col.style.width = col.style.minWidth = col.style.maxWidth = `${width}px`;
+        fixTableWidth(table, currentWidths, headers.map(item => item.dataset.columnKey));
       };
       const finish = () => {
         document.removeEventListener("pointermove", move);
@@ -496,8 +573,17 @@
       vscode.postMessage({ type: "calculate-similarity", datasetId: activeDatasetId });
     });
     document.getElementById("settings-button")?.addEventListener("click", () => {
-      moreActionsOpen = false; render(); vscode.postMessage({ type: "open-settings" });
+      moreActionsOpen = false;
+      if (viewerOptions.settings.length) { settingsOpen = true; render(); }
+      else { render(); vscode.postMessage({ type: "open-settings" }); }
     });
+    document.getElementById("close-viewer-settings")?.addEventListener("click", () => { settingsOpen = false; render(); });
+    document.querySelectorAll("[data-viewer-setting]").forEach(control => control.addEventListener("change", () => {
+      const definition = viewerOptions.settings.find(item => item.id === control.dataset.viewerSetting);
+      const value = definition?.type === "boolean" ? control.checked : definition?.type === "number" ? Number(control.value) : control.value;
+      viewerSettings[control.dataset.viewerSetting] = value;
+      vscode.postMessage({ type: "viewer-settings-change", id: control.dataset.viewerSetting, value, values: { ...viewerSettings } });
+    }));
     document.getElementById("loading-options-button")?.addEventListener("click", () => {
       columnWidths.delete(activeDatasetId);
       resettingColumnWidths.add(activeDatasetId);
@@ -567,7 +653,11 @@
 
   window.addEventListener("message", (event) => {
     const message = event.data;
-    if (message?.type === "backend-ready") {
+    if (message?.type === "viewer-config") {
+      configureViewer(message.options || message);
+      settingsOpen = false;
+      render();
+    } else if (message?.type === "backend-ready") {
       loadingProgress = null;
       if (message.dataset) {
         datasetOptions = [message.dataset];
@@ -745,6 +835,17 @@
       renderError(message.title || "Error", message.message || "Unknown error");
     }
   });
+
+  window.msentityDatasetViewer = {
+    configure(options) { configureViewer(options); render(); },
+    getOptions() { return JSON.parse(JSON.stringify(viewerOptions)); },
+    getSettings() { return { ...viewerSettings }; },
+    setSetting(id, value) {
+      viewerSettings[id] = value;
+      vscode.postMessage({ type: "viewer-settings-change", id, value, values: { ...viewerSettings } });
+      render();
+    },
+  };
 
   function requestExport() {
     if (!value || !activeDatasetId || exporting || loadingPage || metadataBusy) return;

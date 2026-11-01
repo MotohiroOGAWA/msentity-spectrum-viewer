@@ -159,6 +159,43 @@ SpecID, and similarity); [protocol.md](protocol.md#host-messages-from-the-ui)
 lists every message, and [`vscode/extension.js`](../vscode/extension.js) is a
 complete host.
 
+### Configuring the legacy Dataset Viewer
+
+All controls are visible by default. An embedding can define options before
+loading `viewer.js`, call the public API later, or post a `viewer-config`
+message. Controls can be hidden independently (hiding `more` hides its entire
+menu):
+
+```html
+<script>
+window.msentityViewerOptions = {
+  controls: {
+    reload: false, filter: false, export: true, more: true,
+    metadata: false, columns: true, assignSpecId: false,
+    structureCounts: false, similarity: true,
+    loadingOptions: false, settings: true
+  },
+  settings: [
+    // Fixed existing/application setting: retained in values but not shown.
+    { id: "mzTolerance", type: "number", value: 0.01, hidden: true },
+    // Application-owned visible settings.
+    { id: "formulaMode", label: "Formula mode", type: "select", value: "auto",
+      options: [{ value: "auto", label: "Automatic" }, { value: "manual", label: "Manual" }] },
+    { id: "showIsotopes", label: "Show isotopes", type: "boolean", value: true }
+  ]
+};
+</script>
+<script src="ui/viewer.js"></script>
+```
+
+Runtime equivalents are
+`window.msentityDatasetViewer.configure(options)`, `getOptions()`,
+`getSettings()`, and `setSetting(id, value)`. A host can instead send
+`{ type: "viewer-config", options }`. Changes from visible settings emit
+`viewer-settings-change` with `{ id, value, values }`; the embedding decides
+how those generic values map to its own configuration. With no custom setting
+definitions, Settings retains its existing VS Code `open-settings` behavior.
+
 `findBackendExecutable` finds `build/backend/msentity-viewer-backend` after
 building this repository with CMake (section 1 with
 `MSENTITY_VIEWER_BUILD_BACKEND` left ON), or an executable given by the

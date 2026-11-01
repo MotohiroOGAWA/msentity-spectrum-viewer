@@ -9,8 +9,13 @@ const styles = fs.readFileSync(path.join(__dirname, "../../ui/viewer.css"), "utf
 test("dataset table keeps horizontal scroll across page renders", () => {
   assert.match(script, /const tableViews = new Map\(\)/);
   assert.match(script, /tableView\(wrap\.dataset\.datasetId\)\.scrollLeft = wrap\.scrollLeft/);
-  assert.match(script, /wrap\.scrollLeft = tableView\(wrap\.dataset\.datasetId\)\.scrollLeft/);
+  assert.match(script, /const scrollLeft = tableView\(datasetId\)\.scrollLeft/);
+  assert.match(script, /wrap\.scrollLeft = scrollLeft/);
   assert.match(script, /data-dataset-id="\$\{esc\(activeDatasetId\)\}"/);
+  assert.match(script, /requestAnimationFrame\(\(\) =>/);
+  assert.match(script, /classList\.add\("restoring-scroll"\)/);
+  assert.match(script, /classList\.remove\("restoring-scroll"\)/);
+  assert.match(styles, /\.table-wrap\.restoring-scroll[^}]*visibility: hidden/);
 });
 
 test("column widths are resizable, retained per dataset, and cleared by reload", () => {
@@ -28,4 +33,21 @@ test("automatic widths are frozen after the first loaded page", () => {
   assert.match(script, /restoreTableView\(\);\s*freezeAutomaticColumnWidths\(\)/);
   assert.match(script, /resettingColumnWidths\.add\(activeDatasetId\)/);
   assert.match(script, /dataset-page[\s\S]{0,240}resettingColumnWidths\.delete\(activeDatasetId\)/);
+});
+
+test("fixed columns render with a fixed total table width without an automatic-layout frame", () => {
+  assert.match(script, /const tableWidthStyle =/);
+  assert.match(script, /style="width:\$\{width\}px;min-width:\$\{width\}px"/);
+  assert.match(script, /fixTableWidth\(table, currentWidths/);
+  assert.doesNotMatch(styles, /\.dataset-table\.has-custom-widths[^}]*max-content/);
+});
+
+test("page navigation keeps the current fixed table visible until new data arrives", () => {
+  const requestStart = script.indexOf("function requestPage(requested)");
+  const requestEnd = script.indexOf("function toggleColumn", requestStart);
+  const requestPage = script.slice(requestStart, requestEnd);
+  assert.doesNotMatch(requestPage, /\brender\(\)/);
+  assert.match(requestPage, /classList\.add\("page-loading"\)/);
+  assert.match(requestPage, /vscode\.postMessage\(viewRequest\(target\)\)/);
+  assert.match(styles, /\.table-wrap\.page-loading/);
 });

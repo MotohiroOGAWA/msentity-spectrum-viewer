@@ -12,6 +12,12 @@ optionally `datasetId`, `spectrumId`/`spectrumKey`, `rowId`/`globalIndex`,
 `column-visibility` carries `{ type, component, scope, visible?, hidden?,
 available? }`. These additive messages do not change existing host messages.
 
+The Dataset Viewer also accepts `viewer-config` with an `options` object for
+control visibility and embedding-defined settings (see `embedding.md`). A
+visible setting change posts `viewer-settings-change` containing `id`,
+`value`, and the complete `values` object. Unknown setting IDs are intentionally
+left to the embedding host.
+
 The UI components ([`ui/`](../ui)), the host ([`host/`](../host), or any other
 program), and the backend ([`backend/`](../backend)) exchange JSON messages.
 The same messages are used on both links:
