@@ -33,6 +33,9 @@ test("edit, export, remove, and re-add", { skip }, () => {
     const pages = ofType(messages, "dataset-page").map((m) => m.value);
     assert.deepEqual(ofType(messages, "metadata-updated")[0].metadata,
       { description: "説明", attributes: { "測定": "test" }, tags: ["確認済み"] });
+    const cellUpdates = ofType(messages, "metadata-updated").filter(message => message.column);
+    assert.deepEqual(cellUpdates.map(message => [message.row_id, message.column, message.value]),
+      [[1, "Name", "changed"], [1, "Mass", "201.5"]]);
     assert.equal(pages[1].description, "説明");
     assert.deepEqual(pages[2].row_ids, [1, 0]);                  // Mass "200" > "100"
     assert.equal(pages[3].rows[0].Name, "a");

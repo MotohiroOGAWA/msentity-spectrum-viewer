@@ -53,6 +53,9 @@ test("resizing a column preserves the current horizontal scroll position", () =>
   assert.match(script, /function|const preserveScroll =/);
   assert.match(script, /wrap\.scrollLeft = preservedScrollLeft/);
   assert.match(script, /tableView\(wrap\.dataset\.datasetId\)\.scrollLeft = preservedScrollLeft/);
+  const resizeStart = script.indexOf('document.querySelectorAll(".column-resize-handle")');
+  const resizeEnd = script.indexOf("const moreButton", resizeStart);
+  assert.doesNotMatch(script.slice(resizeStart, resizeEnd), /\brender\(\)/);
 });
 
 test("pointer actions capture and restore horizontal position around rerenders", () => {
@@ -61,6 +64,10 @@ test("pointer actions capture and restore horizontal position around rerenders",
   assert.match(script, /addEventListener\("pointerdown", beginPointerInteraction, true\)/);
   assert.match(script, /pointerTableView\?\.datasetId === wrap\.dataset\.datasetId/);
   assert.match(script, /document\.addEventListener\("click"[\s\S]*restoreTableView\(\)/);
+  assert.match(script, /restoreTableView\(\);[\s\S]{0,240}pointerTableView = null/);
+  const pointerStart = script.indexOf("function beginPointerInteraction()");
+  const pointerEnd = script.indexOf("function restoreTableView", pointerStart);
+  assert.doesNotMatch(script.slice(pointerStart, pointerEnd), /setTimeout/);
 });
 
 test("page navigation keeps the current fixed table visible until new data arrives", () => {

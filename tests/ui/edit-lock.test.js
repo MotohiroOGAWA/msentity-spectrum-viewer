@@ -15,3 +15,14 @@ test("dataset cell editing is locked by default and explicitly unlockable", () =
   assert.match(source, /navigator\.clipboard\.writeText\(text\)/);
   assert.match(source, /viewerOptions\.behavior\.copyLockedCells === false/);
 });
+
+test("cell clicks and accepted edits update in place without rendering", () => {
+  const editStart = source.indexOf('document.querySelectorAll("[data-edit-row]")');
+  const editEnd = source.indexOf('document.getElementById("add-column-toggle")', editStart);
+  assert.doesNotMatch(source.slice(editStart, editEnd), /\brender\(\)/);
+  const updateStart = source.indexOf('message?.type === "metadata-updated"');
+  const updateEnd = source.indexOf('message?.type === "edit-error"', updateStart);
+  const update = source.slice(updateStart, updateEnd);
+  assert.match(update, /cell\.textContent = display\(message\.value\)/);
+  assert.doesNotMatch(update.slice(update.indexOf("else if (message.row_id")), /viewRequest|render\(\)/);
+});

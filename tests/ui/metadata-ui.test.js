@@ -51,9 +51,11 @@ test("metadata form sends edits and dataset removal restores original selection"
   assert.equal(posted.at(-1).attributes.instrument, "MS");
   send({ type: "metadata-updated", dataset_id: "original", metadata: accepted });
   element("metadata-description").handlers.input({ target: { value: "next draft" } });
+  const postedBeforeLegacyUpdate = posted.length;
   send({ type: "metadata-updated", dataset_id: "original" });
-  assert.equal(posted.at(-1).type, "page-request");
-  assert.match(app.innerHTML, /id="metadata-description">next draft<\/textarea>/);
+  assert.equal(posted.length, postedBeforeLegacyUpdate);
+  // A legacy cell-update acknowledgement no longer rebuilds the table or the
+  // metadata form; the live textarea keeps its browser-managed draft value.
   element("columns-button").handlers.click({ stopPropagation() {} });
   assert.match(app.innerHTML, /id="add-column-form" class="add-column-form" hidden/);
   element("add-column-toggle").handlers.click();

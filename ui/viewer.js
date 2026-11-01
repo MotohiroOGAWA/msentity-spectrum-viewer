@@ -153,7 +153,6 @@
     const view = tableView(pointerTableView.datasetId);
     view.scrollLeft = pointerTableView.scrollLeft;
     view.windowScrollX = pointerTableView.windowScrollX;
-    setTimeout(() => { pointerTableView = null; }, 0);
   }
   function restoreTableView() {
     const wrap = document.querySelector(".table-wrap[data-dataset-id]");
@@ -799,14 +798,22 @@
           // metadata accepted by the backend.
           value = { ...value, ...message.metadata };
           metadataDraft = null;
-        } else {
-          // Spectrum cell edits affect filtering and sorting; reload the table
-          // without discarding an unrelated dataset metadata draft.
-          loadingPage = true;
-          vscode.postMessage(viewRequest(page()));
+          render();
+        } else if (message.row_id !== undefined && message.column !== undefined) {
+          // Update the accepted edit in place. Cell editing must not rebuild
+          // the table because that disturbs scroll and column geometry.
+          const index = value?.row_ids?.findIndex(rowId => String(rowId) === String(message.row_id)) ?? -1;
+          if (index >= 0) {
+            value.rows[index][message.column] = message.value;
+            for (const cell of document.querySelectorAll("[data-edit-row][data-edit-column]")) {
+              if (Number(cell.dataset.editRow) === index && cell.dataset.editColumn === message.column) {
+                cell.textContent = display(message.value);
+                cell.title = editingUnlocked ? `Double-click or press Enter to edit: ${display(message.value)}` : "Editing is locked";
+              }
+            }
+          }
         }
       }
-      render();
     } else if (message?.type === "edit-error") {
       metadataBusy = false;
       render();
@@ -935,12 +942,16 @@
     }
   });
   document.addEventListener("pointerdown", beginPointerInteraction, true);
+  document.addEventListener("pointercancel", () => { pointerTableView = null; }, true);
   document.addEventListener("click", (e) => {
     if (datasetMenuOpen && !e.target.closest?.(".dataset-info")) { datasetMenuOpen = false; render(); }
     else if (moreActionsOpen && !e.target.closest?.(".more-actions")) { moreActionsOpen = false; render(); }
     else if (columnMenuOpen && !e.target.closest?.(".columns")) { columnMenuOpen = false; render(); }
     else if (filterMenuOpen && !e.target.closest?.(".filters")) { filterMenuOpen = false; render(); }
     restoreTableView();
+    // Keep the pointerdown snapshot through every synchronous render caused
+    // by this click. Only release it after the final table has been restored.
+    pointerTableView = null;
   });
 
   let dragDepth = 0;

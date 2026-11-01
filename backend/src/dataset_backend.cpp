@@ -406,8 +406,8 @@ class DatasetBackend {
       return;
     }
     if (type == "update-peak-cell" || type == "get-peak-record") {
-      int64_t position = position_of(current, request.value("row_id", json()));
       json row_id = request["row_id"];
+      int64_t position = position_of(current, row_id);
       if (type == "update-peak-cell") {
         std::string column = json_text(request.value("column", json()));
         const auto& columns = current.peaks().metadata_columns();
@@ -461,10 +461,14 @@ class DatasetBackend {
     } else {  // update-cell
       std::string column = json_text(request.value("column", json()));
       if (!current.has_column(column)) throw std::invalid_argument("Unknown metadata column");
-      int64_t position = position_of(current, request.value("row_id", json()));
+      json row_id = request.value("row_id", json());
+      int64_t position = position_of(current, row_id);
       Value old_value = current.value(position, column);
       current.set_value(position, column,
                         edited_value(old_value, json_text(request.value("value", json(""))), false));
+      response["row_id"] = row_id;
+      response["column"] = column;
+      response["value"] = to_json(current.value(position, column));
     }
     emit(response);
   }
