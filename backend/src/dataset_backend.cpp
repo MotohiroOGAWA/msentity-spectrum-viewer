@@ -585,10 +585,10 @@ class DatasetBackend {
         options.method = sim::parse_method(json_text(value));
       } else if (name == "threshold") {
         threshold = value.get<double>();
-      } else if (name == "mz_tolerance_da" || name == "bin_width") {  // bin_width: former name
-        options.mz_tolerance_da = value.get<double>();
-      } else if (name == "mz_tolerance_ppm") {
-        options.mz_tolerance_ppm = value.get<double>();
+      } else if (name == "mz_tolerance") {
+        auto tolerance = sim::parse_mz_tolerance(json_text(value));
+        options.mz_tolerance_da = tolerance.da;
+        options.mz_tolerance_ppm = tolerance.ppm;
       } else if (name == "intensity_exponent") {
         options.intensity_exponent = value.get<double>();
       } else if (name == "threads") {

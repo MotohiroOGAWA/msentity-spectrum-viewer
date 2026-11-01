@@ -140,7 +140,7 @@ these):
 const { similaritySettings, comparisonSettings } = require("./third_party/msentity-spectrum-viewer/host");
 
 // Parameters of calculate-similarity: your settings over SIMILARITY_DEFAULTS, validated.
-const defaults = similaritySettings({ mz_tolerance_da: 0, mz_tolerance_ppm: 10, threshold: 0.7 });
+const defaults = similaritySettings({ mz_tolerance: "10ppm", threshold: 0.7 });
 backend.send({ type: "calculate-similarity", mode: "library_search", dataset1, dataset2,
                path: "/data/result.mssim", parameters: defaults });
 

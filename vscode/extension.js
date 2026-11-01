@@ -59,8 +59,8 @@ function configuredLoadOptions() {
 function configuredSimilaritySettings(host) {
   const config = vscode.workspace.getConfiguration("msentitySpectrumViewer.similarity");
   const names = {
-    method: "method", threshold: "threshold", mz_tolerance_da: "mzToleranceDa",
-    mz_tolerance_ppm: "mzTolerancePpm", intensity_exponent: "intensityExponent",
+    method: "method", threshold: "threshold", mz_tolerance: "mzTolerance",
+    intensity_exponent: "intensityExponent",
     include_matched_data: "includeMatchedData", threads: "threads",
   };
   const overrides = {};
@@ -231,7 +231,7 @@ class MSEntityViewerProvider {
         Promise.resolve()
           .then(() => this.configureSimilarity(
             message.datasets, message.active_dataset_id, document.uri,
-            writeRequest, send, () => disposed, configuredSimilaritySettings(host)
+            writeRequest, send, () => disposed, configuredSimilaritySettings(host), host
           ))
           .catch((error) => send({ type: "similarity-error", message: error.message || String(error) }));
       } else if (message.type === "similarity-complete") {
@@ -569,7 +569,8 @@ class MSEntityViewerProvider {
   }
 
   // `defaults`: similarity settings (host similaritySettings()) shown as the initial choices.
-  async configureSimilarity(datasets, activeDatasetId, documentUri, writeRequest, send, isDisposed, defaults) {
+  // host: the host library (parseMzTolerance / formatMzTolerance check the m/z tolerance input).
+  async configureSimilarity(datasets, activeDatasetId, documentUri, writeRequest, send, isDisposed, defaults, host) {
     const cancel = () => send({ type: "similarity-cancelled" });
     if (!datasets.length) throw new Error("No dataset is loaded.");
     const modeChoice = await vscode.window.showQuickPick([
@@ -681,12 +682,16 @@ class MSEntityViewerProvider {
       parameters[name] = Number(input);
       return true;
     };
-    // Peaks match within the Da tolerance or the ppm tolerance; 0 turns a rule off.
-    if (!await askNumber("mz_tolerance_da", "m/z tolerance in Da (0 = use ppm only)",
-      (number) => number < 0 ? "Enter 0 or a positive number." : undefined)) return cancel();
-    if (!await askNumber("mz_tolerance_ppm", "m/z tolerance in ppm (0 = use Da only; a peak matches within either)",
-      (number) => number < 0 ? "Enter 0 or a positive number."
-        : number === 0 && parameters.mz_tolerance_da === 0 ? "The Da tolerance is 0, so enter a positive ppm tolerance." : undefined)) return cancel();
+    // Peaks match within either term, e.g. 0.01Da,10ppm; a unit left out is off.
+    const tolerance = await vscode.window.showInputBox({
+      title: "Similarity: m/z tolerance (e.g. 0.01Da,10ppm, 10ppm, or 0.01Da; a peak matches within either)",
+      value: defaults.mz_tolerance, ignoreFocusOut: true, prompt,
+      validateInput: (text) => {
+        try { host.parseMzTolerance(text); return undefined; } catch (error) { return error.message; }
+      }
+    });
+    if (tolerance === undefined || isDisposed()) return cancel();
+    parameters.mz_tolerance = host.formatMzTolerance(host.parseMzTolerance(tolerance));
     if (!await askNumber("intensity_exponent", "Intensity exponent (0.5 = square root)",
       (number) => number <= 0 ? "Enter a positive number." : undefined)) return cancel();
     const storageChoice = await vscode.window.showQuickPick(defaultFirst([

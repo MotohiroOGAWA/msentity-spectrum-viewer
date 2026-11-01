@@ -8,14 +8,48 @@
 const SIMILARITY_DEFAULTS = Object.freeze({
   method: "cosine",            // "cosine" or "reverse_cosine"
   threshold: 0.8,              // library search: lowest score kept, 0–1
-  mz_tolerance_da: 0.01,       // peaks match within this many Da (0 = off) ...
-  mz_tolerance_ppm: 0,         // ... or within this many ppm (0 = off)
+  mz_tolerance: "0.01Da,10ppm", // peaks match within either term (see parseMzTolerance)
   intensity_exponent: 1,       // intensities are raised to this power (> 0)
   include_matched_data: true,  // library search: store the matched spectra in the result
   threads: 0,                  // 0 = all hardware threads
 });
 
 const METHODS = ["cosine", "reverse_cosine"];
+
+const MZ_TOLERANCE_TERM = /^\s*([+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?)\s*(da|ppm)\s*$/i;
+
+/**
+ * Reads an m/z tolerance as msentity-similarity's parse_mz_tolerance does:
+ * "<value>Da" and/or "<value>ppm" joined by a comma, in either order, units
+ * case-insensitive ("0.01Da,10ppm", "10ppm", "10 PPM, 0.01da"). A unit left
+ * out is 0 (off). Throws an Error when the text is invalid.
+ * @param {string} text
+ * @returns {{da: number, ppm: number}}
+ */
+function parseMzTolerance(text) {
+  const invalid = () => new Error(`m/z tolerance must look like 0.01Da, 10ppm, or 0.01Da,10ppm, got ${JSON.stringify(text)}`);
+  if (typeof text !== "string") throw invalid();
+  const values = {};
+  for (const term of text.split(",")) {
+    const match = MZ_TOLERANCE_TERM.exec(term);
+    const unit = match?.[2].toLowerCase();
+    if (!match || unit in values) throw invalid();
+    values[unit] = Number(match[1]);
+  }
+  const tolerance = { da: values.da ?? 0, ppm: values.ppm ?? 0 };
+  if (![tolerance.da, tolerance.ppm].every((v) => Number.isFinite(v) && v >= 0)) throw invalid();
+  if (tolerance.da === 0 && tolerance.ppm === 0) throw new Error("m/z tolerance needs a positive Da or ppm value");
+  return tolerance;
+}
+
+/**
+ * Canonical text of an m/z tolerance, e.g. "0.01Da,10ppm" (a zero term is left out).
+ * @param {{da: number, ppm: number}} tolerance
+ * @returns {string}
+ */
+function formatMzTolerance({ da, ppm }) {
+  return [da > 0 ? `${da}Da` : "", ppm > 0 ? `${ppm}ppm` : ""].filter(Boolean).join(",");
+}
 
 /**
  * SIMILARITY_DEFAULTS with `overrides` applied (keys as in SIMILARITY_DEFAULTS;
@@ -40,10 +74,10 @@ function similaritySettings(overrides = {}) {
     throw new Error(`Similarity setting method must be one of ${METHODS.join(", ")}, got ${JSON.stringify(settings.method)}`);
   }
   number("threshold", (v) => v >= 0 && v <= 1, "a number from 0 to 1");
-  number("mz_tolerance_da", (v) => v >= 0, "a number >= 0");
-  number("mz_tolerance_ppm", (v) => v >= 0, "a number >= 0");
-  if (settings.mz_tolerance_da === 0 && settings.mz_tolerance_ppm === 0) {
-    throw new Error("Similarity settings mz_tolerance_da and mz_tolerance_ppm must not both be 0");
+  try {
+    settings.mz_tolerance = formatMzTolerance(parseMzTolerance(settings.mz_tolerance));
+  } catch (error) {
+    throw new Error(`Similarity setting ${error.message}`);
   }
   number("intensity_exponent", (v) => v > 0, "a number > 0");
   number("threads", (v) => Number.isSafeInteger(v) && v >= 0, "an integer >= 0");
@@ -84,4 +118,7 @@ function comparisonSettings(overrides = {}) {
   return Object.freeze(settings);
 }
 
-module.exports = { SIMILARITY_DEFAULTS, similaritySettings, COMPARISON_DEFAULTS, comparisonSettings };
+module.exports = {
+  SIMILARITY_DEFAULTS, similaritySettings, parseMzTolerance, formatMzTolerance,
+  COMPARISON_DEFAULTS, comparisonSettings,
+};

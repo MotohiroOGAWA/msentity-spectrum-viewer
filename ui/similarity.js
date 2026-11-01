@@ -42,11 +42,11 @@
     const method = value?.metadata?.parameters?.method === "reverse_cosine"
       ? "Reverse cosine similarity" : "Cosine similarity";
     const parameters = value?.metadata?.parameters || {};
-    // Peak matching: "0.01 Da", "10 ppm", "0.01 Da or 10 ppm"; older files: "bin width 0.01".
+    // Peak matching: "0.01 Da", "10 ppm", "0.01 Da or 10 ppm".
     const tolerance = [
       parameters.mz_tolerance_da > 0 ? `${number(parameters.mz_tolerance_da)} Da` : "",
       parameters.mz_tolerance_ppm > 0 ? `${number(parameters.mz_tolerance_ppm)} ppm` : "",
-    ].filter(Boolean).join(" or ") || (parameters.bin_width > 0 ? `bin width ${number(parameters.bin_width)}` : "");
+    ].filter(Boolean).join(" or ");
     const matching = tolerance ? ` · m/z ${tolerance}` : "";
     const subtitle = mode === "library_search"
       ? `${method} library search · all query/reference pairs · threshold ${number(parameters.threshold)}${matching}`

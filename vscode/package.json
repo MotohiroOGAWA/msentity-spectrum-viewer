@@ -210,17 +210,10 @@
           "maximum": 1,
           "description": "Default score threshold of a library search: only matches at or above it are saved."
         },
-        "msentitySpectrumViewer.similarity.mzToleranceDa": {
-          "type": "number",
-          "default": 0.01,
-          "minimum": 0,
-          "description": "Default m/z tolerance in Da: two peaks match when |m/z1 − m/z2| is at most this value. 0 turns the Da rule off (ppm only)."
-        },
-        "msentitySpectrumViewer.similarity.mzTolerancePpm": {
-          "type": "number",
-          "default": 0,
-          "minimum": 0,
-          "description": "Default m/z tolerance in ppm of the mean m/z of the two peaks. Peaks match when either the Da or the ppm rule holds; 0 turns the ppm rule off (Da only)."
+        "msentitySpectrumViewer.similarity.mzTolerance": {
+          "type": "string",
+          "default": "0.01Da,10ppm",
+          "description": "Default m/z tolerance: <value>Da and/or <value>ppm joined by a comma, e.g. 0.01Da,10ppm, 10ppm, or 0.01Da. Two peaks match when they are within either (ppm of the mean m/z of the two peaks); a unit left out is not used."
         },
         "msentitySpectrumViewer.similarity.intensityExponent": {
           "type": "number",

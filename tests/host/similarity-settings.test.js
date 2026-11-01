@@ -5,38 +5,54 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const { test } = require("node:test");
-const { SIMILARITY_DEFAULTS, similaritySettings, COMPARISON_DEFAULTS, comparisonSettings } = require("../../host");
+const {
+  SIMILARITY_DEFAULTS, similaritySettings, parseMzTolerance, formatMzTolerance, COMPARISON_DEFAULTS, comparisonSettings,
+} = require("../../host");
 
 test("defaults, overrides, and validation", () => {
   assert.deepEqual(similaritySettings(), SIMILARITY_DEFAULTS);
-  assert.equal(SIMILARITY_DEFAULTS.mz_tolerance_da, 0.01);
-  const ppm = similaritySettings({ mz_tolerance_da: 0, mz_tolerance_ppm: 10, method: "reverse_cosine", threads: undefined });
-  assert.equal(ppm.mz_tolerance_da, 0);
-  assert.equal(ppm.mz_tolerance_ppm, 10);
+  assert.equal(SIMILARITY_DEFAULTS.mz_tolerance, "0.01Da,10ppm");
+  const ppm = similaritySettings({ mz_tolerance: " 10 PPM ", method: "reverse_cosine", threads: undefined });
+  assert.equal(ppm.mz_tolerance, "10ppm");   // canonical text
   assert.equal(ppm.method, "reverse_cosine");
   assert.equal(ppm.threads, 0);
-  assert.throws(() => similaritySettings({ mz_tolerance_da: 0 }), /must not both be 0/);
-  assert.throws(() => similaritySettings({ mz_tolerance_ppm: -1 }), /mz_tolerance_ppm must be a number >= 0/);
+  assert.equal(similaritySettings({ mz_tolerance: "10ppm,0.01da" }).mz_tolerance, "0.01Da,10ppm");
+  assert.throws(() => similaritySettings({ mz_tolerance: "0Da,0ppm" }), /positive/);
+  assert.throws(() => similaritySettings({ mz_tolerance: 0.01 }), /Similarity setting m\/z tolerance must look like/);
+  assert.throws(() => similaritySettings({ mz_tolerance_da: 0.01 }), /Unknown similarity setting: mz_tolerance_da/);
   assert.throws(() => similaritySettings({ threshold: 1.5 }), /threshold/);
   assert.throws(() => similaritySettings({ intensity_exponent: 0 }), /intensity_exponent/);
   assert.throws(() => similaritySettings({ threads: 1.5 }), /threads/);
   assert.throws(() => similaritySettings({ method: "dot" }), /method/);
   assert.throws(() => similaritySettings({ include_matched_data: "yes" }), /include_matched_data/);
-  assert.throws(() => similaritySettings({ bin_width: 0.01 }), /Unknown similarity setting: bin_width/);
 });
 
 test("VS Code setting defaults equal SIMILARITY_DEFAULTS", () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, "../../vscode/package.json"), "utf8"));
   const properties = manifest.contributes.configuration.properties;
   const settings = {
-    method: "method", threshold: "threshold", mz_tolerance_da: "mzToleranceDa",
-    mz_tolerance_ppm: "mzTolerancePpm", intensity_exponent: "intensityExponent",
+    method: "method", threshold: "threshold", mz_tolerance: "mzTolerance",
+    intensity_exponent: "intensityExponent",
     include_matched_data: "includeMatchedData", threads: "threads",
   };
   assert.deepEqual(Object.keys(settings).sort(), Object.keys(SIMILARITY_DEFAULTS).sort());
   for (const [name, setting] of Object.entries(settings)) {
     assert.equal(properties[`msentitySpectrumViewer.similarity.${setting}`]?.default, SIMILARITY_DEFAULTS[name], setting);
   }
+});
+
+test("m/z tolerance text", () => {
+  assert.deepEqual(parseMzTolerance("0.01Da,10ppm"), { da: 0.01, ppm: 10 });
+  assert.deepEqual(parseMzTolerance(" 10 PPM , 0.01da "), { da: 0.01, ppm: 10 });
+  assert.deepEqual(parseMzTolerance("10ppm"), { da: 0, ppm: 10 });
+  assert.deepEqual(parseMzTolerance("5e-3Da"), { da: 0.005, ppm: 0 });
+  for (const bad of ["", "0.01", "Da", "0.01Da,", "0.01Da,0.02Da", "-1Da", "0Da", "10mDa", "0.01 Da 10ppm",
+    "InfinityDa", "1e400Da", "0x10Da", "0,01Da", null]) {
+    assert.throws(() => parseMzTolerance(bad), /m\/z tolerance/, String(bad));
+  }
+  assert.equal(formatMzTolerance({ da: 0.01, ppm: 10 }), "0.01Da,10ppm");
+  assert.equal(formatMzTolerance({ da: 0, ppm: 10 }), "10ppm");
+  assert.equal(formatMzTolerance({ da: 0.01, ppm: 0 }), "0.01Da");
 });
 
 test("spectrum comparison defaults", () => {

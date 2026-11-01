@@ -179,17 +179,19 @@ test("peaks match within the m/z tolerance in Da or ppm", { skip }, () => {
       const page = ofType(resultPage(output, [{ type: "page" }]), "similarity-page")[0].value;
       return { score: page.rows[0].similarity, parameters: page.metadata.parameters };
     };
-    assert.equal(calculate({ mz_tolerance_da: 0.001 }).score, 0);
-    const either = calculate({ mz_tolerance_da: 0.001, mz_tolerance_ppm: 50 });
+    assert.equal(calculate({ mz_tolerance: "0.001Da" }).score, 0);
+    const either = calculate({ mz_tolerance: "50 PPM, 0.001da" });
     assert.equal(either.score, 1);
     assert.equal(either.parameters.mz_tolerance_da, 0.001);
     assert.equal(either.parameters.mz_tolerance_ppm, 50);
-    assert.equal(calculate({ mz_tolerance_da: 0, mz_tolerance_ppm: 30 }).score, 0);
-    // bin_width is the former name of mz_tolerance_da.
-    const former = calculate({ bin_width: 0.01 });
-    assert.equal(former.score, 1);
-    assert.equal(former.parameters.mz_tolerance_da, 0.01);
-    assert.match(calculate({ mz_tolerance_da: 0 }), /mz_tolerance_da and mz_tolerance_ppm must be positive/);
+    assert.equal(calculate({ mz_tolerance: "30ppm" }).score, 0);
+    // Default: 0.01 Da or 10 ppm.
+    const defaults = calculate({});
+    assert.equal(defaults.score, 1);
+    assert.deepEqual([defaults.parameters.mz_tolerance_da, defaults.parameters.mz_tolerance_ppm], [0.01, 10]);
+    assert.match(calculate({ mz_tolerance: "0.01" }), /m\/z tolerance must look like/);
+    assert.match(calculate({ mz_tolerance: "0Da" }), /must be positive/);
+    assert.match(calculate({ mz_tolerance_da: 0.01 }), /Unknown similarity parameter: mz_tolerance_da/);
   } finally {
     tmp.cleanup();
   }

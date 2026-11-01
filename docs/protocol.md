@@ -151,14 +151,15 @@ display filter/sort views.
  "parameters": {"method": "cosine",        // or "reverse_cosine"
                 "threshold": 0.8,           // library_search
                 "key1": "SpecID", "key2": "SpecID",   // by_key
-                "mz_tolerance_da": 0.01,    // peaks match within this many Da (0 = off)
-                "mz_tolerance_ppm": 0,      // ... or within this many ppm (0 = off)
+                "mz_tolerance": "0.01Da,10ppm",   // peaks match within either term;
+                                                  // e.g. "10ppm" or "0.01Da" uses one rule only
                 "intensity_exponent": 1.0, "threads": 0,
                 "include_matched_data": true}}        // default: true for library_search, false for by_key
 ```
 
-Every parameter is optional. `bin_width` is accepted as the former name of
-`mz_tolerance_da`. A host can take its defaults from `similaritySettings()` of
+Every parameter is optional. `mz_tolerance` is read by msentity-similarity's
+`parse_mz_tolerance`: `<value>Da` and/or `<value>ppm` joined by a comma, in
+either order, units case-insensitive. A host can take its defaults from `similaritySettings()` of
 the host library (`host/similarity.js`), which applies the host's own settings
 over `SIMILARITY_DEFAULTS` and validates them.
 

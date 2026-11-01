@@ -157,10 +157,10 @@ search** or **Match by metadata key**. A library search compares every spectrum
 in the query dataset with every spectrum in a reference library. The reference
 can be an entry already loaded with **Add dataset…**, or an MSDS, MSP, MGF, TSV,
 or CSV file selected for that calculation. Choose cosine or reverse cosine,
-set the score threshold (default `0.8`), the m/z tolerance in Da (default
-`0.01`) and in ppm (default `0`, off), and the intensity exponent before saving
-the result as **`.mssim`**. Two peaks match when they are within the Da
-tolerance or the ppm tolerance (0 turns either rule off); each peak matches at
+set the score threshold (default `0.8`), the m/z tolerance (default
+`0.01Da,10ppm`; `10ppm` or `0.01Da` uses one rule only), and the intensity
+exponent before saving the result as **`.mssim`**. Two peaks match when they
+are within the Da tolerance or the ppm tolerance; each peak matches at
 most one peak, the closest one. The initial choices come from the
 `msentitySpectrumViewer.similarity` settings. Scores are calculated by
 [msentity-similarity](https://github.com/MotohiroOGAWA/msentity-similarity)
@@ -280,10 +280,10 @@ discards assignments that have not been exported.
   `structurePreviewWidth`, `structurePreviewHeight`: structure previews.
 <!-- rdkit:end -->
 - `msentitySpectrumViewer.similarity.*`: defaults of **Calculate similarity…** —
-  `method` (`cosine`), `threshold` (`0.8`), `mzToleranceDa` (`0.01`),
-  `mzTolerancePpm` (`0`), `intensityExponent` (`1`), `includeMatchedData`
-  (`true`), `threads` (`0` = all cores). Peaks match within `mzToleranceDa` Da
-  or `mzTolerancePpm` ppm; set one to `0` to use only the other.
+  `method` (`cosine`), `threshold` (`0.8`), `mzTolerance` (`0.01Da,10ppm`),
+  `intensityExponent` (`1`), `includeMatchedData` (`true`), `threads` (`0` =
+  all cores). `mzTolerance` is `<value>Da` and/or `<value>ppm` joined by a
+  comma (e.g. `10ppm` or `0.01Da` for one rule only); peaks match within either.
 - `msentitySpectrumViewer.spectrumComparison.method` (`dot`, `reverse`,
   `modified`, `bonanza`) and `toleranceDa` (`0.05`): initial score settings
   when two spectra are compared.
