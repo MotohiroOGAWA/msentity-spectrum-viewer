@@ -7,7 +7,9 @@
   const defaultControls = { reload: true, filter: true, export: true, more: true, editLock: true,
     metadata: true, columns: true, assignSpecId: true, structureCounts: true,
     similarity: true, loadingOptions: true, settings: true };
-  let viewerOptions = { controls: { ...defaultControls }, behavior: { copyLockedCells: true }, settings: [] };
+  let viewerOptions = { controls: { ...defaultControls }, behavior: {
+    copyLockedCells: true, lockedCellCopyGesture: "rightClick", showCopyNotifications: true
+  }, settings: [] };
   let viewerSettings = {};
   let settingsOpen = false;
   let editingUnlocked = false;
@@ -372,7 +374,7 @@
         ${metadataForm()}
         ${settingsForm()}
         <div class="table-wrap" data-dataset-id="${esc(activeDatasetId)}"><table class="dataset-table ${hasFixedWidths ? "has-custom-widths" : ""}"${tableWidthStyle(widths, columnKeys)}><colgroup>${columnKeys.map(key => `<col data-column-key="${esc(key)}"${columnStyle(widths, key)}>`).join("")}</colgroup><thead><tr><th class="row-column" data-column-key="row">${resizeHandle("row")}Row</th><th class="spectrum-column" data-column-key="spectrum">${resizeHandle("spectrum")}Spectrum</th>${showStructureColumn ? `<th class="structure-column" data-column-key="structure">${resizeHandle("structure")}Structure</th>` : ""}${selectedColumns.map((c) => { const item = sortFor(c), key = `metadata:${c}`; return `<th data-column-key="${esc(key)}"><button class="table-sort" data-sort-column="${esc(c)}" title="Click: ascending → descending → remove sort">${esc(c)}<span>${item ? `${item.priority}${item.direction === "asc" ? "▲" : "▼"}` : ""}</span></button>${resizeHandle(key)}</th>`; }).join("")}</tr></thead><tbody>
-          ${pageRows.length ? pageRows.map(({ row, index }) => { const smiles = smilesColumn ? String(row?.[smilesColumn] ?? "").trim() : ""; return `<tr class="${selectedSpectrumIndex === index ? "selected-record" : ""}"><td class="row-column">${rowOffset() + index + 1}</td><td class="spectrum-column"><button class="spectrum-button" data-spectrum-index="${index}" title="Show spectrum ${rowOffset() + index + 1}"><svg viewBox="0 0 28 22"><path d="M2 19h24M4 18V13m4 5V7m4 11v-4m4 4V3m4 15V9m4 9v-7"/></svg></button></td>${showStructureColumn ? `<td class="structure-column">${smiles ? `<button class="structure-button" data-structure-index="${index}" aria-label="View structure" title="View structure"><svg viewBox="0 0 28 24" aria-hidden="true" focusable="false"><path class="structure-edges" d="M14 3 21.8 7.5v9L14 21l-7.8-4.5v-9Z"/><g class="structure-nodes"><circle cx="14" cy="3" r="2.1"/><circle cx="21.8" cy="7.5" r="2.1"/><circle cx="21.8" cy="16.5" r="2.1"/><circle cx="14" cy="21" r="2.1"/><circle cx="6.2" cy="16.5" r="2.1"/><circle cx="6.2" cy="7.5" r="2.1"/></g></svg></button>` : ""}</td>` : ""}${selectedColumns.map((c) => `<td ${editingUnlocked ? 'tabindex="0"' : ""} data-edit-row="${index}" data-edit-column="${esc(c)}" class="${editingUnlocked ? "editable-cell" : "locked-cell"}" title="${editingUnlocked ? `Double-click or press Enter to edit: ${esc(display(row?.[c]))}` : "Editing is locked"}">${esc(display(row?.[c]))}</td>`).join("")}</tr>`; }).join("") : `<tr><td colspan="${selectedColumns.length + 2 + (showStructureColumn ? 1 : 0)}" class="empty">No spectra match the filters.</td></tr>`}
+          ${pageRows.length ? pageRows.map(({ row, index }) => { const smiles = smilesColumn ? String(row?.[smilesColumn] ?? "").trim() : ""; return `<tr class="${selectedSpectrumIndex === index ? "selected-record" : ""}"><td class="row-column">${rowOffset() + index + 1}</td><td class="spectrum-column"><button class="spectrum-button" data-spectrum-index="${index}" title="Show spectrum ${rowOffset() + index + 1}"><svg viewBox="0 0 28 22"><path d="M2 19h24M4 18V13m4 5V7m4 11v-4m4 4V3m4 15V9m4 9v-7"/></svg></button></td>${showStructureColumn ? `<td class="structure-column">${smiles ? `<button class="structure-button" data-structure-index="${index}" aria-label="View structure" title="View structure"><svg viewBox="0 0 28 24" aria-hidden="true" focusable="false"><path class="structure-edges" d="M14 3 21.8 7.5v9L14 21l-7.8-4.5v-9Z"/><g class="structure-nodes"><circle cx="14" cy="3" r="2.1"/><circle cx="21.8" cy="7.5" r="2.1"/><circle cx="21.8" cy="16.5" r="2.1"/><circle cx="14" cy="21" r="2.1"/><circle cx="6.2" cy="16.5" r="2.1"/><circle cx="6.2" cy="7.5" r="2.1"/></g></svg></button>` : ""}</td>` : ""}${selectedColumns.map((c) => `<td ${editingUnlocked ? 'tabindex="0"' : ""} data-edit-row="${index}" data-edit-column="${esc(c)}" class="${editingUnlocked ? "editable-cell" : "locked-cell"}" title="${editingUnlocked ? `Double-click or press Enter to edit: ${esc(display(row?.[c]))}` : `${viewerOptions.behavior.lockedCellCopyGesture === "leftClick" ? "Click" : "Right-click"} to copy the complete value`}">${esc(display(row?.[c]))}</td>`).join("")}</tr>`; }).join("") : `<tr><td colspan="${selectedColumns.length + 2 + (showStructureColumn ? 1 : 0)}" class="empty">No spectra match the filters.</td></tr>`}
         </tbody></table></div>
         <div class="pagination"><span>${start}–${end} of ${totalRows()}</span><div class="page-controls"><button id="prev-page" ${page() === 0 || loadingPage ? "disabled" : ""}>‹</button><span><input id="page-input" type="number" min="1" max="${pageCount()}" value="${page() + 1}" ${loadingPage ? "disabled" : ""}/> / ${pageCount()}</span><button id="next-page" ${page() >= pageCount() - 1 || loadingPage ? "disabled" : ""}>›</button></div><span>${loadingPage ? "Loading…" : `${pageSize()} rows/page`}</span></div>
         ${structurePreview ? `<div class="structure-backdrop" id="structure-backdrop"><section class="structure-preview" role="dialog" aria-modal="true" aria-labelledby="structure-title"><header><strong id="structure-title">Structure</strong><button id="close-structure" class="modal-close" aria-label="Close structure preview">×</button></header><div class="structure-canvas">${structurePreview.url ? `<img src="${esc(structurePreview.url)}" alt="Chemical structure for ${esc(structurePreview.smiles)}">` : `<span>Rendering structure…</span>`}</div><code>${esc(structurePreview.smiles)}</code></section></div>` : ""}
@@ -477,18 +479,25 @@
       };
       el.addEventListener("dblclick", edit);
       el.addEventListener("keydown", event => { if (event.key === "Enter") { event.preventDefault(); edit(); } });
-      el.addEventListener("click", async () => {
+      const copyCell = async event => {
         if (editingUnlocked || viewerOptions.behavior.copyLockedCells === false) return;
+        const expectedEvent = viewerOptions.behavior.lockedCellCopyGesture === "leftClick" ? "click" : "contextmenu";
+        if (event.type !== expectedEvent) return;
+        if (event.type === "contextmenu") event.preventDefault();
         const index = Number(el.dataset.editRow);
         const cellValue = rows()[index]?.[el.dataset.editColumn];
         const text = cellValue == null ? "" : typeof cellValue === "object" ? JSON.stringify(cellValue) : String(cellValue);
         try {
           await navigator.clipboard.writeText(text);
-          vscode.postMessage({ type: "copy-notification", message: `Copied ${el.dataset.editColumn}.` });
+          if (viewerOptions.behavior.showCopyNotifications !== false) {
+            vscode.postMessage({ type: "copy-notification", message: `Copied ${el.dataset.editColumn}.` });
+          }
         } catch (error) {
           vscode.postMessage({ type: "clipboard-error", message: error?.message || "Could not copy the cell value." });
         }
-      });
+      };
+      el.addEventListener("click", copyCell);
+      el.addEventListener("contextmenu", copyCell);
     });
 
     document.getElementById("add-column-toggle")?.addEventListener("click", () => {
@@ -755,7 +764,8 @@
             for (const cell of document.querySelectorAll("[data-edit-row][data-edit-column]")) {
               if (Number(cell.dataset.editRow) === index && cell.dataset.editColumn === message.column) {
                 cell.textContent = display(message.value);
-                cell.title = editingUnlocked ? `Double-click or press Enter to edit: ${display(message.value)}` : "Editing is locked";
+                cell.title = editingUnlocked ? `Double-click or press Enter to edit: ${display(message.value)}`
+                  : `${viewerOptions.behavior.lockedCellCopyGesture === "leftClick" ? "Click" : "Right-click"} to copy the complete value`;
               }
             }
           }

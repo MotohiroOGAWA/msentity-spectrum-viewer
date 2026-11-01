@@ -169,7 +169,11 @@ menu):
 ```html
 <script>
 window.msentityViewerOptions = {
-  behavior: { copyLockedCells: true },
+  behavior: {
+    copyLockedCells: true,
+    lockedCellCopyGesture: "rightClick",
+    showCopyNotifications: true
+  },
   controls: {
     reload: false, filter: false, export: true, more: true,
     metadata: false, columns: true, assignSpecId: false,
@@ -197,9 +201,12 @@ Runtime equivalents are
 how those generic values map to its own configuration. With no custom setting
 definitions, Settings retains its existing VS Code `open-settings` behavior.
 Dataset cells are read-only by default and the lock button next to More enables
-editing. While locked, clicking a cell copies its value. Set
-`behavior.copyLockedCells` to `false` to disable copying; the VS Code extension
-exposes the same option as `msentitySpectrumViewer.copyLockedCells`.
+editing. While locked, right-clicking a cell copies its complete value by default,
+including text truncated in the table. Set `behavior.lockedCellCopyGesture` to
+`"leftClick"` to use a left-click, `behavior.showCopyNotifications` to `false`
+to suppress the success notification, or `behavior.copyLockedCells` to `false`
+to disable copying. The VS Code extension exposes the same options under
+`msentitySpectrumViewer`.
 
 `findBackendExecutable` finds `build/backend/msentity-viewer-backend` after
 building this repository with CMake (section 1 with

@@ -10,13 +10,14 @@ try { ({ chromium } = require("playwright")); } catch { /* optional in npm test 
 const ROOT = path.resolve(__dirname, "../..");
 const skip = !chromium;
 
-async function openViewer() {
+async function openViewer(options = {}) {
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 900, height: 650 } });
   await page.setContent('<!doctype html><html><body><div id="app" data-filename="test.msds"></div></body></html>');
   await page.addStyleTag({ path: path.join(ROOT, "ui/viewer.css") });
   await page.addInitScript(() => {});
-  await page.evaluate(() => {
+  await page.evaluate(viewerOptions => {
+    window.msentityViewerOptions = viewerOptions;
     window.__trace = { messages: [], scrollTo: [], raf: 0, mutations: 0, appReplacements: 0, copied: [] };
     const innerHTML = Object.getOwnPropertyDescriptor(Element.prototype, "innerHTML");
     Object.defineProperty(Element.prototype, "innerHTML", { configurable: true,
@@ -45,7 +46,7 @@ async function openViewer() {
     };
     new MutationObserver(records => { window.__trace.mutations += records.length; })
       .observe(document.getElementById("app"), { childList: true, subtree: true });
-  });
+  }, options);
   await page.addScriptTag({ path: path.join(ROOT, "ui/viewer.js") });
   await page.waitForSelector('[data-edit-column="Column_13"]');
   await page.waitForTimeout(50);
@@ -78,7 +79,7 @@ function assertStable(before, after) {
   assert.equal(after.trace.appReplacements, before.trace.appReplacements);
 }
 
-test("locked cell click preserves table DOM, geometry, and scroll", { skip }, async () => {
+test("locked cell left-click preserves the table without copying by default", { skip }, async () => {
   const { browser, page } = await openViewer();
   try {
     const selector = '[data-edit-column="Column_13"]';
@@ -90,7 +91,7 @@ test("locked cell click preserves table DOM, geometry, and scroll", { skip }, as
     const after = await snapshot(page, selector);
     console.log("VIEWER_CELL_CLICK", JSON.stringify({ before, after }));
     assertStable(before, after);
-    assert.equal(after.trace.copied.at(-1)?.startsWith("Column_13_value"), true);
+    assert.equal(after.trace.copied.length, 0);
     assert.equal(after.trace.messages.some(message => message.type === "page-request"), false);
     assert.equal(after.trace.scrollTo.length, before.trace.scrollTo.length);
     assert.equal(after.trace.raf, before.trace.raf);
@@ -108,7 +109,7 @@ test("locked cell click remains stable after applying a filter", { skip }, async
     await page.evaluate(() => { const wrap = document.querySelector(".table-wrap"); wrap.scrollLeft = wrap.scrollWidth - wrap.clientWidth - 80; });
     const before = await snapshot(page, selector);
     const box = await page.locator(selector).boundingBox();
-    await page.mouse.click(box.x + 20, box.y + box.height / 2);
+    await page.mouse.click(box.x + 20, box.y + box.height / 2, { button: "right" });
     await page.waitForTimeout(50);
     const after = await snapshot(page, selector);
     console.log("VIEWER_FILTERED_CELL_CLICK", JSON.stringify({ before, after }));
@@ -116,6 +117,36 @@ test("locked cell click remains stable after applying a filter", { skip }, async
     assert.equal(after.trace.copied.at(-1)?.startsWith("Column_13_value"), true);
     const pageRequests = after.trace.messages.filter(message => message.type === "page-request");
     assert.equal(pageRequests.length, 1);
+  } finally { await browser.close(); }
+});
+
+test("locked cell right-click copies the complete untruncated value in place", { skip }, async () => {
+  const { browser, page } = await openViewer();
+  try {
+    const selector = '[data-edit-column="Column_13"]';
+    await page.evaluate(() => { const wrap = document.querySelector(".table-wrap"); wrap.scrollLeft = wrap.scrollWidth - wrap.clientWidth - 80; });
+    const before = await snapshot(page, selector);
+    await page.locator(selector).click({ button: "right", position: { x: 20, y: 20 } });
+    await page.waitForTimeout(30);
+    const after = await snapshot(page, selector);
+    assertStable(before, after);
+    assert.equal(after.trace.copied.at(-1), "Column_13_value_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
+    assert.equal(after.trace.messages.at(-1)?.type, "copy-notification");
+  } finally { await browser.close(); }
+});
+
+test("copy gesture can be changed to left-click and its notification disabled", { skip }, async () => {
+  const { browser, page } = await openViewer({ behavior: {
+    lockedCellCopyGesture: "leftClick", showCopyNotifications: false
+  } });
+  try {
+    const selector = '[data-edit-column="Column_13"]';
+    await page.locator(selector).click({ position: { x: 20, y: 20 } });
+    await page.waitForTimeout(30);
+    const state = await snapshot(page, selector);
+    assert.equal(state.trace.copied.at(-1), "Column_13_value_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
+    assert.equal(state.trace.messages.some(message => message.type === "copy-notification"), false);
+    assert.match(await page.locator(selector).getAttribute("title"), /^Click to copy/);
   } finally { await browser.close(); }
 });
 

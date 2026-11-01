@@ -280,7 +280,9 @@ class MSEntityViewerProvider {
         case "webview-ready":
           webviewReady = true;
           if (!isSimilarity) webview.postMessage({ type: "viewer-config", options: { behavior: {
-            copyLockedCells: vscode.workspace.getConfiguration("msentitySpectrumViewer").get("copyLockedCells", true) !== false
+            copyLockedCells: vscode.workspace.getConfiguration("msentitySpectrumViewer").get("copyLockedCells", true) !== false,
+            lockedCellCopyGesture: vscode.workspace.getConfiguration("msentitySpectrumViewer").get("lockedCellCopyGesture", "rightClick"),
+            showCopyNotifications: vscode.workspace.getConfiguration("msentitySpectrumViewer").get("showCopyNotifications", true) !== false
           } } });
           for (const pending of held.splice(0)) webview.postMessage(pending);
           break;
@@ -336,6 +338,12 @@ class MSEntityViewerProvider {
         }
         case "edit-error-notification":
           vscode.window.showErrorMessage(String(message.message));
+          break;
+        case "copy-notification":
+          vscode.window.showInformationMessage(String(message.message || "Copied to clipboard."));
+          break;
+        case "clipboard-error":
+          vscode.window.showErrorMessage(String(message.message || "Could not copy to clipboard."));
           break;
         case "open-settings":
           vscode.commands.executeCommand(

@@ -125,7 +125,19 @@
         "msentitySpectrumViewer.copyLockedCells": {
           "type": "boolean",
           "default": true,
-          "description": "Copy a dataset cell value to the clipboard when the cell is clicked while table editing is locked."
+          "description": "Allow copying a dataset cell's complete value while table editing is locked."
+        },
+        "msentitySpectrumViewer.lockedCellCopyGesture": {
+          "type": "string",
+          "enum": ["rightClick", "leftClick"],
+          "enumDescriptions": ["Copy with a right-click.", "Copy with a left-click."],
+          "default": "rightClick",
+          "description": "Mouse gesture used to copy a locked dataset cell."
+        },
+        "msentitySpectrumViewer.showCopyNotifications": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show a notification after copying a locked dataset cell."
         },
         "msentitySpectrumViewer.loading.allowDuplicateColumns": {
           "type": "boolean",
