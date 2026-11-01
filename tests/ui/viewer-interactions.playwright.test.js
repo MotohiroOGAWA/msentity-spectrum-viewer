@@ -97,6 +97,28 @@ test("locked cell click preserves table DOM, geometry, and scroll", { skip }, as
   } finally { await browser.close(); }
 });
 
+test("locked cell click remains stable after applying a filter", { skip }, async () => {
+  const { browser, page } = await openViewer();
+  try {
+    await page.locator("#filter-button").click();
+    await page.locator("#add-filter").click();
+    await page.locator("#apply-filters").click();
+    await page.waitForFunction(() => !document.querySelector(".table-wrap")?.classList.contains("page-loading"));
+    const selector = '[data-edit-column="Column_13"]';
+    await page.evaluate(() => { const wrap = document.querySelector(".table-wrap"); wrap.scrollLeft = wrap.scrollWidth - wrap.clientWidth - 80; });
+    const before = await snapshot(page, selector);
+    const box = await page.locator(selector).boundingBox();
+    await page.mouse.click(box.x + 20, box.y + box.height / 2);
+    await page.waitForTimeout(50);
+    const after = await snapshot(page, selector);
+    console.log("VIEWER_FILTERED_CELL_CLICK", JSON.stringify({ before, after }));
+    assertStable(before, after);
+    assert.equal(after.trace.copied.at(-1)?.startsWith("Column_13_value"), true);
+    const pageRequests = after.trace.messages.filter(message => message.type === "page-request");
+    assert.equal(pageRequests.length, 1);
+  } finally { await browser.close(); }
+});
+
 test("edit start and accepted value update preserve table DOM and position", { skip }, async () => {
   const { browser, page } = await openViewer();
   try {
