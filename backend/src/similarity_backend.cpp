@@ -2,6 +2,7 @@
 // spectra, and export of a filtered .mssim result.
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <filesystem>
 #include <iostream>
@@ -194,11 +195,21 @@ class SimilarityBackend {
       json metadata = json::object();
       std::string title;
       for (const auto& column : record->columns()) metadata[column] = to_json(record->value(0, column));
-      for (const char* key : {"Name", "name", "TITLE", "Title", "SpecID", "ID", "id"}) {
-        if (metadata.contains(key) && !metadata[key].is_null() && json_text(metadata[key]) != "") {
-          title = json_text(metadata[key]);
-          break;
+      // Column names are compared case-insensitively: uncanonicalized MSP/MGF
+      // columns keep their source spelling (NAME, TITLE).
+      const auto lower = [](std::string text) {
+        std::transform(text.begin(), text.end(), text.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        return text;
+      };
+      for (const char* key : {"name", "title", "specid", "id"}) {
+        for (const auto& [column, value] : metadata.items()) {
+          if (lower(column) == key && !value.is_null() && json_text(value) != "") {
+            title = json_text(value);
+            break;
+          }
         }
+        if (!title.empty()) break;
       }
       if (title.empty()) title = "Spectrum " + std::to_string(source_index + 1);
       std::string source_path = json_text(source.value("path", json("")));
