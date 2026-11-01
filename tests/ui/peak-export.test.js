@@ -31,6 +31,19 @@ test("comparison peaks align within tolerance and retain both ascending orders",
   assert.deepEqual(Array.from(rows.flatMap((row) => row.lower ? [row.lower.x] : [])), [99.98, 120, 130.04, 150]);
 });
 
+test("comparison peaks align within a ppm tolerance of their mean m/z", () => {
+  // 10 ppm: ±0.001 at m/z 100, ±0.01 at m/z 1000.
+  const upper = context.tablePeaks([100, 1000], [10, 11]);
+  const lower = context.tablePeaks([100.002, 1000.009], [20, 21]);
+  const pairs = (tolerance) => JSON.parse(JSON.stringify(context.alignPeakRows(upper, lower, tolerance, true)
+    .map((row) => [row.upper?.x ?? null, row.lower?.x ?? null])));
+  assert.deepEqual(pairs({ da: 0.005, ppm: 10, unit: "ppm" }), [[100, null], [null, 100.002], [1000, 1000.009]]);
+  // 0.005 Da: 100.002 matches, 1000.009 does not.
+  assert.deepEqual(pairs({ da: 0.005, ppm: 10, unit: "Da" }), [[100, 100.002], [1000, null], [null, 1000.009]]);
+  // Da or ppm: within either.
+  assert.deepEqual(pairs({ da: 0.005, ppm: 10, unit: "Da or ppm" }), [[100, 100.002], [1000, 1000.009]]);
+});
+
 test("comparison peak descending order reverses aligned rows without changing pairs", () => {
   const upper = context.tablePeaks([100, 110, 130], [10, 11, 13]);
   const lower = context.tablePeaks([99.98, 120, 130.05], [20, 22, 23]);

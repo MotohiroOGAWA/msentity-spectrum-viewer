@@ -56,15 +56,20 @@ function configuredLoadOptions() {
 
 // Defaults of the similarity wizard: msentitySpectrumViewer.similarity.*
 // over the host library's SIMILARITY_DEFAULTS.
+// The m/z tolerance comes from msentitySpectrumViewer.spectrumComparison.tolerance*,
+// shared with the spectrum comparison view.
 function configuredSimilaritySettings(host) {
   const config = vscode.workspace.getConfiguration("msentitySpectrumViewer.similarity");
   const names = {
-    method: "method", threshold: "threshold", mz_tolerance: "mzTolerance",
+    method: "method", threshold: "threshold",
     intensity_exponent: "intensityExponent",
     include_matched_data: "includeMatchedData", threads: "threads",
   };
   const overrides = {};
   for (const [name, setting] of Object.entries(names)) overrides[name] = config.get(setting);
+  const tolerance = configuredMzTolerance(host);
+  overrides.mz_tolerance = host.formatMzTolerance({
+    da: tolerance.unit.includes("Da") ? tolerance.da : 0, ppm: tolerance.unit.includes("ppm") ? tolerance.ppm : 0 });
   try {
     return host.similaritySettings(overrides);
   } catch (error) {
@@ -77,11 +82,27 @@ function configuredSimilaritySettings(host) {
 function configuredComparisonSettings(host) {
   const config = vscode.workspace.getConfiguration("msentitySpectrumViewer.spectrumComparison");
   try {
-    return host.comparisonSettings({ method: config.get("method"), tolerance_da: config.get("toleranceDa") });
+    return host.comparisonSettings({ method: config.get("method"), tolerance_unit: config.get("toleranceUnit"),
+      tolerance_da: config.get("toleranceDa"), tolerance_ppm: config.get("tolerancePpm"),
+      precursor_column: config.get("precursorColumn") });
   } catch (error) {
     outputChannel?.appendLine(`[settings] ${error.message}; using the default comparison settings`);
     return host.comparisonSettings();
   }
+}
+
+// Most worker threads a similarity calculation may use: one logical core is
+// always left for VS Code and the rest of the system.
+function maximumSimilarityThreads() {
+  const os = require("os");
+  const cores = typeof os.availableParallelism === "function" ? os.availableParallelism() : os.cpus().length;
+  return Math.max(1, cores - 1);
+}
+
+// Unit ("Da", "ppm", or "Da or ppm") and both values of the configured m/z tolerance.
+function configuredMzTolerance(host) {
+  const settings = configuredComparisonSettings(host);
+  return { unit: settings.tolerance_unit, da: settings.tolerance_da, ppm: settings.tolerance_ppm };
 }
 
 async function chooseLoadOptions(current) {
@@ -226,14 +247,18 @@ class MSEntityViewerProvider {
     });
     // Dataset viewers go through a session (SMARTS filters, structures);
     // similarity viewers talk to the backend directly.
+    // Datasets of the last similarity-options, which similarity-submit chooses from.
+    let similarityDatasets = [];
     const onBackendMessage = (message) => {
       if (message.type === "similarity-options") {
-        Promise.resolve()
-          .then(() => this.configureSimilarity(
-            message.datasets, message.active_dataset_id, document.uri,
-            writeRequest, send, () => disposed, configuredSimilaritySettings(host), host
-          ))
-          .catch((error) => send({ type: "similarity-error", message: error.message || String(error) }));
+        // The Calculate similarity form (ui/viewer.js) starts from the configured defaults.
+        similarityDatasets = Array.isArray(message.datasets) ? message.datasets : [];
+        try {
+          message = { ...message, defaults: configuredSimilaritySettings(host), tolerance: configuredMzTolerance(host),
+            max_threads: maximumSimilarityThreads() };
+        } catch (error) {
+          message = { type: "similarity-error", message: error.message || String(error) };
+        }
       } else if (message.type === "similarity-complete") {
         vscode.commands.executeCommand("vscode.openWith", vscode.Uri.file(message.path), SIMILARITY_VIEW_TYPE)
           .catch((error) => vscode.window.showErrorMessage(String(error)));
@@ -417,6 +442,23 @@ class MSEntityViewerProvider {
         case "calculate-similarity":
           writeRequest({ type: "similarity-options", dataset_id: message.datasetId });
           break;
+        case "choose-similarity-reference": {
+          const files = await vscode.window.showOpenDialog({
+            title: "Choose reference dataset",
+            canSelectMany: false,
+            filters: { "Mass spectrum datasets": Object.keys(DATASET_FORMATS) }
+          });
+          if (!disposed) send({ type: "similarity-reference", path: files?.[0]?.fsPath || null });
+          break;
+        }
+        case "similarity-submit":
+          try {
+            await this.startSimilarity(message, similarityDatasets, document.uri, writeRequest, send,
+              () => disposed, configuredSimilaritySettings(host), host);
+          } catch (error) {
+            send({ type: "similarity-form-error", message: error.message || String(error) });
+          }
+          break;
         case "similarity-error-notification":
           vscode.window.showErrorMessage(String(message.message || "Could not calculate similarity."));
           break;
@@ -570,155 +612,57 @@ class MSEntityViewerProvider {
 
   // `defaults`: similarity settings (host similaritySettings()) shown as the initial choices.
   // host: the host library (parseMzTolerance / formatMzTolerance check the m/z tolerance input).
-  async configureSimilarity(datasets, activeDatasetId, documentUri, writeRequest, send, isDisposed, defaults, host) {
-    const cancel = () => send({ type: "similarity-cancelled" });
-    if (!datasets.length) throw new Error("No dataset is loaded.");
-    const modeChoice = await vscode.window.showQuickPick([
-      {
-        label: "Library search",
-        description: "Compare every query spectrum with every reference spectrum",
-        mode: "library_search"
-      },
-      {
-        label: "Match by metadata key",
-        description: "Compare records that share the same unique ID or other key",
-        mode: "by_key"
-      }
-    ], { title: "Calculate similarity", placeHolder: "Choose how spectra are paired", ignoreFocusOut: true });
-    if (!modeChoice || isDisposed()) return cancel();
+  // Starts a calculation chosen in the Calculate similarity form (similarity-submit):
+  // validates the choices, asks where to save the result, and sends calculate-similarity.
+  // Invalid choices throw; a cancelled save dialog answers similarity-save-cancelled.
+  async startSimilarity(form, datasets, documentUri, writeRequest, send, isDisposed, defaults, host) {
+    const mode = form?.mode;
+    if (!["library_search", "by_key"].includes(mode)) throw new Error("Choose how spectra are paired.");
+    const datasetById = (id) => datasets.find((dataset) => dataset.id === id);
+    const first = datasetById(form.dataset1);
+    if (!first) throw new Error(mode === "library_search" ? "Choose the query dataset." : "Choose the first dataset.");
+    const second = datasetById(form.dataset2);
+    if (second?.id === first.id) throw new Error("Choose two different datasets.");
+    const referencePath = mode === "library_search" && !second && typeof form.reference_path === "string"
+      && form.reference_path ? form.reference_path : undefined;
+    if (mode === "library_search" && !second && !referencePath) throw new Error("Choose a reference dataset or file.");
+    if (mode === "by_key" && !second) throw new Error("Choose the second dataset for metadata-key matching.");
 
-    const orderedDatasets = [...datasets].sort((left, right) =>
-      Number(right.id === activeDatasetId) - Number(left.id === activeDatasetId));
-    const datasetItems = (items) => items.map((dataset) => ({
-      label: dataset.name, description: dataset.id, dataset
-    }));
-    let first = orderedDatasets[0];
-    if (orderedDatasets.length > 1) {
-      const choice = await vscode.window.showQuickPick(datasetItems(orderedDatasets), {
-        title: modeChoice.mode === "library_search" ? "Library search: query dataset" : "Key matching: first dataset",
-        placeHolder: "The currently active dataset is listed first", ignoreFocusOut: true
-      });
-      if (!choice || isDisposed()) return cancel();
-      first = choice.dataset;
+    const chosen = form.parameters || {};
+    const settings = host.similaritySettings({
+      method: chosen.method, threshold: chosen.threshold, mz_tolerance: chosen.mz_tolerance,
+      intensity_exponent: chosen.intensity_exponent, include_matched_data: chosen.include_matched_data,
+      threads: chosen.threads ?? defaults.threads
+    });
+    const maximumThreads = maximumSimilarityThreads();
+    if (settings.threads > maximumThreads) {
+      throw new Error(`Use at most ${maximumThreads} threads; one logical core is kept free.`);
     }
-
-    let second;
-    let referencePath;
-    if (modeChoice.mode === "library_search") {
-      const referenceItems = [
-        ...datasetItems(datasets.filter((dataset) => dataset.id !== first.id)),
-        { label: "$(folder-opened) Choose a dataset file…", description: "MSDS, MSP, MGF, TSV, or CSV", browse: true }
-      ];
-      const referenceChoice = await vscode.window.showQuickPick(referenceItems, {
-        title: "Library search: reference library",
-        placeHolder: "Choose an Add Dataset entry or load a reference file for this search", ignoreFocusOut: true
-      });
-      if (!referenceChoice || isDisposed()) return cancel();
-      if (referenceChoice.browse) {
-        const files = await vscode.window.showOpenDialog({
-          title: "Choose reference dataset",
-          canSelectMany: false,
-          filters: { "Mass spectrum datasets": Object.keys(DATASET_FORMATS) }
-        });
-        if (!files?.[0] || isDisposed()) return cancel();
-        referencePath = files[0].fsPath;
-      } else {
-        second = referenceChoice.dataset;
-      }
+    const parameters = {
+      method: settings.method, threads: settings.threads, mz_tolerance: settings.mz_tolerance,
+      intensity_exponent: settings.intensity_exponent, include_matched_data: settings.include_matched_data
+    };
+    if (mode === "library_search") {
+      parameters.threshold = settings.threshold;
     } else {
-      const candidates = datasets.filter((dataset) => dataset.id !== first.id);
-      if (!candidates.length) throw new Error("Add a second dataset for metadata-key matching.");
-      const choice = candidates.length === 1 ? { dataset: candidates[0] } : await vscode.window.showQuickPick(
-        datasetItems(candidates),
-        { title: "Key matching: second dataset", placeHolder: "Choose the comparison dataset", ignoreFocusOut: true }
-      );
-      if (!choice || isDisposed()) return cancel();
-      second = choice.dataset;
-    }
-
-    const defaultFirst = (items, isDefault) => [...items.filter(isDefault), ...items.filter((item) => !isDefault(item))]
-      .map((item) => isDefault(item) ? { ...item, detail: "Default (msentitySpectrumViewer.similarity settings)" } : item);
-    const methodChoice = await vscode.window.showQuickPick(defaultFirst([
-      { label: "Cosine similarity", description: "Normalize all peaks in both spectra", method: "cosine" },
-      { label: "Reverse cosine similarity", description: "Ignore unmatched query peaks in the query norm", method: "reverse_cosine" }
-    ], (item) => item.method === defaults.method), { title: "Similarity calculation method", ignoreFocusOut: true });
-    if (!methodChoice || isDisposed()) return cancel();
-    const parameters = { method: methodChoice.method, threads: defaults.threads };
-
-    if (modeChoice.mode === "by_key") {
       for (const [index, dataset] of [first, second].entries()) {
-        const columns = [...dataset.columns].sort((a, b) => (a === "SpecID" ? -1 : b === "SpecID" ? 1 : a.localeCompare(b)));
-        const key = await vscode.window.showQuickPick(columns, {
-          title: `Key matching: key${index + 1} — ${dataset.name}`,
-          placeHolder: "Non-missing keys must be unique; values found on only one side are skipped", ignoreFocusOut: true
-        });
-        if (key === undefined || isDisposed()) return cancel();
+        const key = chosen[`key${index + 1}`];
+        if (!dataset.columns.includes(key)) throw new Error(`Choose a key column of ${dataset.name}.`);
         parameters[`key${index + 1}`] = key;
       }
-    } else {
-      const threshold = await vscode.window.showInputBox({
-        title: "Library search: score threshold", value: String(defaults.threshold), ignoreFocusOut: true,
-        prompt: "Only matches at or above this score are saved.",
-        validateInput: (text) => {
-          const number = Number(text);
-          return !text.trim() || !Number.isFinite(number) || number < 0 || number > 1
-            ? "Enter a finite number from 0 to 1." : undefined;
-        }
-      });
-      if (threshold === undefined || isDisposed()) return cancel();
-      parameters.threshold = Number(threshold);
     }
-
-    const prompt = "Compare the entire selected datasets, including unsaved edits. Table filters do not limit this calculation.";
-    const askNumber = async (name, title, validate) => {
-      const input = await vscode.window.showInputBox({
-        title: `Similarity: ${title}`, value: String(defaults[name]), ignoreFocusOut: true, prompt,
-        validateInput: (text) => {
-          const number = Number(text);
-          return !text.trim() || !Number.isFinite(number) ? "Enter a finite number." : validate(number);
-        }
-      });
-      if (input === undefined || isDisposed()) return false;
-      parameters[name] = Number(input);
-      return true;
-    };
-    // Peaks match within either term, e.g. 0.01Da,10ppm; a unit left out is off.
-    const tolerance = await vscode.window.showInputBox({
-      title: "Similarity: m/z tolerance (e.g. 0.01Da,10ppm, 10ppm, or 0.01Da; a peak matches within either)",
-      value: defaults.mz_tolerance, ignoreFocusOut: true, prompt,
-      validateInput: (text) => {
-        try { host.parseMzTolerance(text); return undefined; } catch (error) { return error.message; }
-      }
-    });
-    if (tolerance === undefined || isDisposed()) return cancel();
-    parameters.mz_tolerance = host.formatMzTolerance(host.parseMzTolerance(tolerance));
-    if (!await askNumber("intensity_exponent", "Intensity exponent (0.5 = square root)",
-      (number) => number <= 0 ? "Enter a positive number." : undefined)) return cancel();
-    const storageChoice = await vscode.window.showQuickPick(defaultFirst([
-      {
-        label: "Include matched data",
-        description: "Store each unique matched spectrum and its metadata once",
-        include: true
-      },
-      {
-        label: "Lightweight result",
-        description: "Store match indices and scores without spectrum data",
-        include: false
-      }
-    ], (item) => item.include === defaults.include_matched_data), { title: "Similarity result contents", ignoreFocusOut: true });
-    if (!storageChoice || isDisposed()) return cancel();
-    parameters.include_matched_data = storageChoice.include;
 
     const target = await vscode.window.showSaveDialog({
       title: "Save similarity results",
       defaultUri: vscode.Uri.joinPath(documentUri, "..", "similarity.mssim"),
       filters: { "msentity similarity": ["mssim"] }
     });
-    if (!target || isDisposed()) return cancel();
+    if (isDisposed()) return;
+    if (!target) return send({ type: "similarity-save-cancelled" });
     if (path.extname(target.fsPath).toLowerCase() !== ".mssim") throw new Error("Use the .mssim extension.");
     send({ type: "similarity-start" });
     writeRequest({
-      type: "calculate-similarity", mode: modeChoice.mode,
+      type: "calculate-similarity", mode,
       dataset1: first.id, dataset2: second?.id, reference_path: referencePath,
       parameters, path: target.fsPath
     });

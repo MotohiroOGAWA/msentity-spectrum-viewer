@@ -329,7 +329,8 @@ class DatasetBackend {
       json datasets = json::array();
       for (const auto& key : order_) {
         const Entry& item = entries_.at(key);
-        datasets.push_back({{"id", key}, {"name", item.name}, {"columns", item.dataset.columns()}});
+        datasets.push_back({{"id", key}, {"name", item.name}, {"columns", item.dataset.columns()},
+                            {"total_rows", item.dataset.size()}});
       }
       emit({{"type", "similarity-options"}, {"datasets", datasets}, {"active_dataset_id", id}});
     } else if (type == "calculate-similarity") {
@@ -576,6 +577,7 @@ class DatasetBackend {
     json parameters = request.value("parameters", json::object());
     if (!parameters.is_object()) throw std::invalid_argument("Similarity parameters must be an object");
     sim::Options options;
+    options.threads = 1;  // never all hardware threads (the library's 0) unless asked for a number
     double threshold = 0.8;
     std::optional<bool> include;
     std::string key1 = "SpecID";
@@ -593,6 +595,7 @@ class DatasetBackend {
         options.intensity_exponent = value.get<double>();
       } else if (name == "threads") {
         options.threads = value.get<int>();
+        if (options.threads < 1) throw std::invalid_argument("Similarity parameter threads must be an integer >= 1");
       } else if (name == "include_matched_data") {
         include = value.get<bool>();
       } else if (name == "key1") {

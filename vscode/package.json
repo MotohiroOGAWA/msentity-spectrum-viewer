@@ -210,11 +210,6 @@
           "maximum": 1,
           "description": "Default score threshold of a library search: only matches at or above it are saved."
         },
-        "msentitySpectrumViewer.similarity.mzTolerance": {
-          "type": "string",
-          "default": "0.01Da,10ppm",
-          "description": "Default m/z tolerance: <value>Da and/or <value>ppm joined by a comma, e.g. 0.01Da,10ppm, 10ppm, or 0.01Da. Two peaks match when they are within either (ppm of the mean m/z of the two peaks); a unit left out is not used."
-        },
         "msentitySpectrumViewer.similarity.intensityExponent": {
           "type": "number",
           "default": 1,
@@ -228,9 +223,9 @@
         },
         "msentitySpectrumViewer.similarity.threads": {
           "type": "integer",
-          "default": 0,
-          "minimum": 0,
-          "description": "Worker threads of a similarity calculation; 0 uses all hardware threads."
+          "default": 1,
+          "minimum": 1,
+          "description": "Initial worker threads of a similarity calculation (can be changed in the Calculate similarity form). At most the number of logical cores minus one is used, so one core is always left free."
         },
         "msentitySpectrumViewer.spectrumComparison.method": {
           "type": "string",
@@ -249,12 +244,39 @@
           "default": "dot",
           "description": "Initial score method when two spectra are compared in the Mass Spectrum view."
         },
+        "msentitySpectrumViewer.spectrumComparison.toleranceUnit": {
+          "type": "string",
+          "enum": [
+            "Da",
+            "ppm",
+            "Da or ppm"
+          ],
+          "enumDescriptions": [
+            "Peaks match within ± toleranceDa",
+            "Peaks match within ± tolerancePpm of their mean m/z",
+            "Peaks match within ± toleranceDa or ± tolerancePpm, whichever is larger"
+          ],
+          "default": "Da or ppm",
+          "description": "Initial unit of the m/z tolerance when two spectra are compared in the Mass Spectrum view and in the Calculate similarity form. The unit can also be switched there."
+        },
         "msentitySpectrumViewer.spectrumComparison.toleranceDa": {
           "type": "number",
-          "default": 0.05,
+          "default": 0.01,
           "exclusiveMinimum": 0,
           "maximum": 10,
-          "description": "Initial fragment matching tolerance (± Da) when two spectra are compared in the Mass Spectrum view."
+          "description": "Initial m/z tolerance (± Da) when two spectra are compared in the Mass Spectrum view and in the Calculate similarity form; used when the unit is Da or Da or ppm."
+        },
+        "msentitySpectrumViewer.spectrumComparison.tolerancePpm": {
+          "type": "number",
+          "default": 10,
+          "exclusiveMinimum": 0,
+          "maximum": 1000,
+          "description": "Initial m/z tolerance (± ppm of the mean m/z of two peaks) when two spectra are compared in the Mass Spectrum view and in the Calculate similarity form; used when the unit is ppm or Da or ppm."
+        },
+        "msentitySpectrumViewer.spectrumComparison.precursorColumn": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Metadata column holding the precursor m/z of compared spectra (column names are compared case-insensitively; the first number of the value is used). Leave empty to detect it automatically: the first of PrecursorMZ, precursor_mz, PEPMASS, and ParentMZ that has a positive number. Modified dot product and BONANZA need a precursor m/z on both spectra and are unavailable otherwise."
         },
         "msentitySpectrumViewer.spectrumFloatingWindow": {
           "type": "boolean",

@@ -26,7 +26,18 @@
   };
   const comparison = { top: null, bottom: null, topPinned: false, bottomPinned: false };
   let similarityMethod = "dot";
-  let similarityTolerance = 0.05;
+  // Metadata column holding the precursor m/z; "" detects it from PRECURSOR_COLUMNS.
+  let precursorColumn = "";
+  const PRECURSOR_COLUMNS = ["PrecursorMZ", "precursor_mz", "PEPMASS", "ParentMZ"];
+  // Methods that match precursor-shifted (neutral-loss) peaks and need a precursor m/z on both sides.
+  const PRECURSOR_METHODS = ["modified", "bonanza"];
+  // Matching tolerance of each unit; switching the unit keeps both values.
+  // The unit "Da or ppm" matches peaks within either tolerance.
+  const similarityTolerance = { Da: 0.01, ppm: 10 };
+  const SIMILARITY_TOLERANCE_MAXIMUM = { Da: 10, ppm: 1000 };
+  const SIMILARITY_TOLERANCE_UNITS = ["Da", "ppm", "Da or ppm"];
+  let similarityToleranceUnit = "Da or ppm";
+  const comparisonTolerance = () => ({ da: similarityTolerance.Da, ppm: similarityTolerance.ppm, unit: similarityToleranceUnit });
   let metadataOpen = false;
 
   const esc = (v) => String(v ?? "")
@@ -153,14 +164,25 @@
     return Number.isFinite(number) && number > 0 ? Math.min(16384, number) : fallback;
   };
 
+  // Precursor m/z of a spectrum from its precursorColumn metadata (with "",
+  // the first of PRECURSOR_COLUMNS that has one), column names compared
+  // case-insensitively. The first token of the value counts (MGF "PEPMASS=500.25
+  // 1200" is 500.25); null unless it is a positive number.
   const precursorMz = (payload) => {
     const row = payload?.row || {};
-    for (const key of ["PrecursorMZ", "PRECURSORMZ", "precursor_mz", "precursorMz", "PEPMASS", "ParentMZ"]) {
-      const value = Number(String(row[key] ?? "").split(/[ ,]/)[0]);
-      if (Number.isFinite(value)) return value;
+    const keys = Object.keys(row);
+    for (const name of precursorColumn ? [precursorColumn] : PRECURSOR_COLUMNS) {
+      const key = name in row ? name : keys.find((column) => column.toLowerCase() === name.toLowerCase());
+      const text = key === undefined ? "" : String(row[key] ?? "").trim().split(/[\s,]+/)[0];
+      const value = text ? Number(text) : NaN;
+      if (Number.isFinite(value) && value > 0) return value;
     }
     return null;
   };
+  const precursorsAvailable = () => precursorMz(comparison.top) !== null && precursorMz(comparison.bottom) !== null;
+  // The chosen method, or the dot product while a precursor-shift method has no precursor m/z.
+  const effectiveSimilarityMethod = () =>
+    PRECURSOR_METHODS.includes(similarityMethod) && !precursorsAvailable() ? "dot" : similarityMethod;
 
   const spectrumPeaks = (payload) => {
     const mz = Array.isArray(payload?.spectrum?.mz) ? payload.spectrum.mz : [];
@@ -173,10 +195,20 @@
     .map((value, index) => ({ x: Number(value), y: Number(intensity[index] ?? 0), index }))
     .filter((peak) => Number.isFinite(peak.x) && Number.isFinite(peak.y));
 
+  // Largest m/z difference at which two peaks match. `tolerance` is a Da value
+  // or { da, ppm, unit } with unit "Da", "ppm" (ppm of the mean m/z of both
+  // peaks), or "Da or ppm" (the larger of the two).
+  const matchTolerance = (tolerance, mzA, mzB) => {
+    const positive = (value) => Math.max(0, Number(value) || 0);
+    if (typeof tolerance !== "object" || tolerance === null) return positive(tolerance);
+    const da = tolerance.unit === "ppm" ? 0 : positive(tolerance.da);
+    const ppm = tolerance.unit === "Da" ? 0 : positive(tolerance.ppm) * 1e-6 * Math.abs(mzA + mzB) / 2;
+    return Math.max(da, ppm);
+  };
+
   const alignPeakRows = (upperPeaks, lowerPeaks, tolerance, ascending = true) => {
     const upper = [...upperPeaks].sort((a, b) => a.x - b.x || a.index - b.index);
     const lower = [...lowerPeaks].sort((a, b) => a.x - b.x || a.index - b.index);
-    const maximumError = Math.max(0, Number(tolerance) || 0);
     const rows = [];
     let upperIndex = 0;
     let lowerIndex = 0;
@@ -186,7 +218,7 @@
       const lowerPeak = lower[lowerIndex];
       const error = Math.abs(upperPeak.x - lowerPeak.x);
       const roundingAllowance = Number.EPSILON * Math.max(1, Math.abs(upperPeak.x), Math.abs(lowerPeak.x)) * 8;
-      if (error <= maximumError + roundingAllowance) {
+      if (error <= matchTolerance(tolerance, upperPeak.x, lowerPeak.x) + roundingAllowance) {
         rows.push({ upper: upperPeak, lower: lowerPeak });
         upperIndex += 1;
         lowerIndex += 1;
@@ -239,15 +271,18 @@
   };
 
   const matchSpectrumPeaks = (upper, lower, allowShift) => {
-    const shift = allowShift && precursorMz(comparison.top) !== null && precursorMz(comparison.bottom) !== null
+    const shift = allowShift && precursorsAvailable()
       ? precursorMz(comparison.top) - precursorMz(comparison.bottom)
       : null;
+    const tolerance = comparisonTolerance();
     const candidates = [];
     upper.forEach((a, upperIndex) => lower.forEach((b, lowerIndex) => {
       const directError = Math.abs(a.mz - b.mz);
       const shiftedError = shift === null ? Infinity : Math.abs((a.mz - b.mz) - shift);
-      const error = Math.min(directError, shiftedError);
-      if (error <= similarityTolerance) candidates.push({ upperIndex, lowerIndex, error, product: a.intensity * b.intensity });
+      const error = Math.min(
+        directError <= matchTolerance(tolerance, a.mz, b.mz) ? directError : Infinity,
+        shiftedError <= matchTolerance(tolerance, a.mz, b.mz + shift) ? shiftedError : Infinity);
+      if (error < Infinity) candidates.push({ upperIndex, lowerIndex, error, product: a.intensity * b.intensity });
     }));
     candidates.sort((a, b) => b.product - a.product || a.error - b.error);
     const usedUpper = new Set(), usedLower = new Set(), matches = [];
@@ -265,7 +300,8 @@
     const upper = spectrumPeaks(comparison.top);
     const lower = spectrumPeaks(comparison.bottom);
     if (!upper.length || !lower.length) return { score: 0, matched: 0 };
-    const shifted = similarityMethod === "modified" || similarityMethod === "bonanza";
+    const similarityMethod = effectiveSimilarityMethod();
+    const shifted = PRECURSOR_METHODS.includes(similarityMethod);
     const { matches, usedUpper, usedLower } = matchSpectrumPeaks(upper, lower, shifted);
     if (!matches.length) return { score: 0, matched: 0 };
 
@@ -556,8 +592,12 @@
   // Default score method and tolerance from the host (comparison-settings).
   function applyComparisonSettings(settings) {
     if (["dot", "reverse", "modified", "bonanza"].includes(settings?.method)) similarityMethod = settings.method;
-    const tolerance = Number(settings?.tolerance_da);
-    if (Number.isFinite(tolerance) && tolerance > 0) similarityTolerance = Math.min(10, tolerance);
+    if (typeof settings?.precursor_column === "string") precursorColumn = settings.precursor_column.trim();
+    for (const unit of ["Da", "ppm"]) {
+      const tolerance = Number(settings?.[`tolerance_${unit.toLowerCase()}`]);
+      if (Number.isFinite(tolerance) && tolerance > 0) similarityTolerance[unit] = Math.min(SIMILARITY_TOLERANCE_MAXIMUM[unit], tolerance);
+    }
+    if (SIMILARITY_TOLERANCE_UNITS.includes(settings?.tolerance_unit)) similarityToleranceUnit = settings.tolerance_unit;
     if (comparison.top) renderSpectrum(true);
   }
 
@@ -618,7 +658,7 @@
           <section class="plot-panel">
             <div class="comparison-slots">
               <div class="comparison-slot"><span class="slot-action-spacer" aria-hidden="true"></span><button id="pin-top" class="pin-button ${comparison.topPinned ? "pinned" : ""}" title="${comparison.topPinned ? "Unpin" : "Pin"} upper spectrum" aria-pressed="${comparison.topPinned}">📌</button><span><strong>Upper</strong> · ${esc(payload.datasetName || "Dataset")} · ${esc(title)}</span></div>
-              ${comparison.bottom ? `<div class="comparison-slot"><button id="remove-bottom" class="remove-spectrum" title="Remove lower spectrum" aria-label="Remove lower spectrum"><svg viewBox="0 0 16 16" aria-hidden="true"><path class="trash-outline" d="M3 4h10M6 4V2h4v2m2 0-.6 10H4.6L4 4m2.5 2v6m3-6v6"/><path class="trash-inner" d="M3 4h10M6 4V2h4v2m2 0-.6 10H4.6L4 4m2.5 2v6m3-6v6"/></svg></button><button id="pin-bottom" class="pin-button ${comparison.bottomPinned ? "pinned" : ""}" title="${comparison.bottomPinned ? "Unpin" : "Pin"} lower spectrum" aria-pressed="${comparison.bottomPinned}">📌</button><span><strong>Lower</strong> · ${esc(comparison.bottom.datasetName || "Dataset")} · ${esc(comparison.bottom.title || "Spectrum")}</span></div><div class="similarity-row"><label>Similarity <select id="similarity-method"><option value="dot" ${similarityMethod === "dot" ? "selected" : ""}>Dot product</option><option value="reverse" ${similarityMethod === "reverse" ? "selected" : ""}>Reverse dot product</option><option value="modified" ${similarityMethod === "modified" ? "selected" : ""}>Modified dot product</option><option value="bonanza" ${similarityMethod === "bonanza" ? "selected" : ""}>BONANZA</option></select></label><label>Tolerance <span>±</span><input id="similarity-tolerance" type="number" min="0.000001" max="10" step="0.01" value="${similarityTolerance}"><span>Da</span></label><output>${Number(similarity?.score || 0).toFixed(4)}</output><span>${similarity?.matched || 0} matched peaks</span></div>` : `<div class="comparison-hint">Pin the upper spectrum, then select another spectrum to compare.</div>`}
+              ${comparison.bottom ? `<div class="comparison-slot"><button id="remove-bottom" class="remove-spectrum" title="Remove lower spectrum" aria-label="Remove lower spectrum"><svg viewBox="0 0 16 16" aria-hidden="true"><path class="trash-outline" d="M3 4h10M6 4V2h4v2m2 0-.6 10H4.6L4 4m2.5 2v6m3-6v6"/><path class="trash-inner" d="M3 4h10M6 4V2h4v2m2 0-.6 10H4.6L4 4m2.5 2v6m3-6v6"/></svg></button><button id="pin-bottom" class="pin-button ${comparison.bottomPinned ? "pinned" : ""}" title="${comparison.bottomPinned ? "Unpin" : "Pin"} lower spectrum" aria-pressed="${comparison.bottomPinned}">📌</button><span><strong>Lower</strong> · ${esc(comparison.bottom.datasetName || "Dataset")} · ${esc(comparison.bottom.title || "Spectrum")}</span></div><div class="similarity-row"><label>Similarity <select id="similarity-method">${[["dot", "Dot product"], ["reverse", "Reverse dot product"], ["modified", "Modified dot product"], ["bonanza", "BONANZA"]].map(([method, label]) => `<option value="${method}" ${effectiveSimilarityMethod() === method ? "selected" : ""} ${PRECURSOR_METHODS.includes(method) && !precursorsAvailable() ? "disabled" : ""}>${label}</option>`).join("")}</select></label><label>Tolerance <select id="similarity-tolerance-unit" aria-label="Tolerance unit">${SIMILARITY_TOLERANCE_UNITS.map((unit) => `<option value="${unit}" ${similarityToleranceUnit === unit ? "selected" : ""}>${unit}</option>`).join("")}</select></label><span class="similarity-tolerance">${["Da", "ppm"].filter((unit) => similarityToleranceUnit.includes(unit)).map((unit) => `<label>±<input id="similarity-tolerance-${unit.toLowerCase()}" data-tolerance-unit="${unit}" type="number" min="0.000001" max="${SIMILARITY_TOLERANCE_MAXIMUM[unit]}" step="${unit === "ppm" ? 1 : 0.001}" value="${similarityTolerance[unit]}" aria-label="Tolerance in ${unit}"> ${unit}</label>`).join(" <span>or</span> ")}</span><output>${Number(similarity?.score || 0).toFixed(4)}</output><span>${similarity?.matched || 0} matched peaks</span>${precursorsAvailable() ? "" : `<span class="similarity-note" role="note">No precursor m/z in the ${[comparison.top, comparison.bottom].map(precursorMz).every((value) => value === null) ? "upper and lower spectra" : precursorMz(comparison.top) === null ? "upper spectrum" : "lower spectrum"} (${precursorColumn ? `column: ${esc(precursorColumn)}` : "column: auto-detected"}): Modified dot product and BONANZA are unavailable${PRECURSOR_METHODS.includes(similarityMethod) ? "; showing the dot product" : ""}.</span>`}</div>` : `<div class="comparison-hint">Pin the upper spectrum, then select another spectrum to compare.</div>`}
             </div>
             <div id="plot-root"></div>
           </section>
@@ -701,7 +741,7 @@
     for (const format of ["tsv", "csv"]) {
       document.getElementById(`copy-peaks-${format}`).onclick = async () => {
         try {
-          const text = peaksAsDelimited(mz, intensity, format, lowerMz, lowerIntensity, similarityTolerance, spectrum, lowerSpectrum, visiblePeakColumns(payload), comparison.bottom ? visiblePeakColumns(comparison.bottom) : null);
+          const text = peaksAsDelimited(mz, intensity, format, lowerMz, lowerIntensity, comparisonTolerance(), spectrum, lowerSpectrum, visiblePeakColumns(payload), comparison.bottom ? visiblePeakColumns(comparison.bottom) : null);
           await navigator.clipboard.writeText(text);
           vscode.postMessage({ type: "copy-notification", message: `Copied peak table as ${format.toUpperCase()}.` });
         } catch (error) {
@@ -715,14 +755,18 @@
       vscode.postMessage({
         type: "save-peaks", basename, sourcePath: payload.datasetPath,
         contents: Object.fromEntries(["tsv", "csv"].map((format) => [
-          format, peaksAsDelimited(mz, intensity, format, lowerMz, lowerIntensity, similarityTolerance, spectrum, lowerSpectrum, visiblePeakColumns(payload), comparison.bottom ? visiblePeakColumns(comparison.bottom) : null)
+          format, peaksAsDelimited(mz, intensity, format, lowerMz, lowerIntensity, comparisonTolerance(), spectrum, lowerSpectrum, visiblePeakColumns(payload), comparison.bottom ? visiblePeakColumns(comparison.bottom) : null)
         ]))
       });
     };
-    const toleranceInput = document.getElementById("similarity-tolerance");
-    if (toleranceInput) toleranceInput.onchange = () => {
-      const value = Number(toleranceInput.value);
-      if (Number.isFinite(value) && value > 0) similarityTolerance = Math.min(10, value);
+    document.querySelectorAll("[data-tolerance-unit]").forEach((input) => input.onchange = () => {
+      const unit = input.dataset.toleranceUnit, value = Number(input.value);
+      if (Number.isFinite(value) && value > 0) similarityTolerance[unit] = Math.min(SIMILARITY_TOLERANCE_MAXIMUM[unit], value);
+      renderSpectrum();
+    });
+    const toleranceUnit = document.getElementById("similarity-tolerance-unit");
+    if (toleranceUnit) toleranceUnit.onchange = () => {
+      if (SIMILARITY_TOLERANCE_UNITS.includes(toleranceUnit.value)) similarityToleranceUnit = toleranceUnit.value;
       renderSpectrum();
     };
     document.getElementById("peak-columns").onclick = () => {
@@ -844,7 +888,7 @@
       root.innerHTML = markup;
 
       if (comparing) {
-        const aligned = alignPeakRows(peaks, lowerPeaks, similarityTolerance, state.sortAscending);
+        const aligned = alignPeakRows(peaks, lowerPeaks, comparisonTolerance(), state.sortAscending);
         tbody.innerHTML = aligned.map(({ upper, lower }) => {
           return `<tr ${upper ? `data-peak-row="${upper.index}"` : ""} class="peak-row ${upper && state.selectedPeak === upper.index ? "selected" : ""}">${peakTableCells(comparison.top, upper, "top")}${peakTableCells(comparison.bottom, lower, "bottom")}</tr>`;
         }).join("");

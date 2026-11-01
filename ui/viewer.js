@@ -90,6 +90,134 @@
     </section>`;
   }
 
+  // Calculate similarity form: opened by similarity-options (datasets and the
+  // host's defaults); every choice is sent at once as similarity-submit.
+  const SIMILARITY_FORM_DEFAULTS = { method: "cosine", threshold: 0.8, mz_tolerance: "0.01Da,10ppm",
+    intensity_exponent: 1, include_matched_data: true };
+  const SIMILARITY_TOLERANCE_UNITS = ["Da or ppm", "Da", "ppm"];
+  let similarityForm = null;
+  const similarityDataset = id => similarityForm?.datasets.find(dataset => dataset.id === id);
+  const defaultSimilarityKey = dataset => dataset?.columns?.includes("SpecID") ? "SpecID" : dataset?.columns?.[0] || "";
+
+  function openSimilarityForm(message) {
+    const defaults = { ...SIMILARITY_FORM_DEFAULTS, ...(message.defaults || {}) };
+    const datasets = Array.isArray(message.datasets) ? message.datasets : [];
+    const first = datasets.find(dataset => dataset.id === message.active_dataset_id) || datasets[0];
+    const second = datasets.find(dataset => dataset !== first);
+    // The host's tolerance { unit, da, ppm }, or the units of defaults.mz_tolerance ("0.01Da,10ppm").
+    const tolerance = { unit: "", da: "0.01", ppm: "10" };
+    if (SIMILARITY_TOLERANCE_UNITS.includes(message.tolerance?.unit)) {
+      Object.assign(tolerance, { unit: message.tolerance.unit, da: String(message.tolerance.da ?? tolerance.da),
+        ppm: String(message.tolerance.ppm ?? tolerance.ppm) });
+    } else {
+      for (const term of String(defaults.mz_tolerance).split(",")) {
+        const match = /^\s*(\S+?)\s*(da|ppm)\s*$/i.exec(term);
+        if (match) tolerance[match[2].toLowerCase()] = match[1];
+      }
+      const units = ["Da", "ppm"].filter(unit => new RegExp(unit, "i").test(String(defaults.mz_tolerance)));
+      tolerance.unit = units.length === 2 ? "Da or ppm" : units[0] || "Da or ppm";
+    }
+    const maximumThreads = Number.isSafeInteger(message.max_threads) && message.max_threads >= 1
+      ? message.max_threads : Math.max(1, (navigator.hardwareConcurrency || 2) - 1);
+    const threads = Number.isSafeInteger(defaults.threads) && defaults.threads >= 1 ? defaults.threads : 1;
+    similarityForm = {
+      datasets, mode: "library_search", dataset1: first?.id || "", dataset2: second?.id || "file", referencePath: "",
+      key1: defaultSimilarityKey(first), key2: defaultSimilarityKey(second), method: defaults.method,
+      threshold: String(defaults.threshold), toleranceUnit: tolerance.unit, toleranceDa: tolerance.da, tolerancePpm: tolerance.ppm,
+      exponent: String(defaults.intensity_exponent), threads: String(Math.min(threads, maximumThreads)), maximumThreads,
+      includeMatchedData: defaults.include_matched_data !== false,
+      choosingReference: false, submitting: false, error: "",
+    };
+  }
+
+  // The m/z tolerance text of the form's unit ("0.01Da,10ppm", "10ppm", or "0.01Da"),
+  // or null unless each value of the unit is a positive number.
+  function similarityTolerance(form) {
+    const terms = [[form.toleranceDa, "Da"], [form.tolerancePpm, "ppm"]]
+      .filter(([, unit]) => form.toleranceUnit.includes(unit))
+      .map(([text, unit]) => ({ number: String(text).trim() ? Number(text) : NaN, unit }));
+    if (terms.some(term => !Number.isFinite(term.number) || term.number <= 0)) return null;
+    return terms.map(term => `${term.number}${term.unit}`).join(",");
+  }
+
+  // The first reason the form cannot be submitted, or "".
+  function similarityFormProblem(form) {
+    const libraryMode = form.mode === "library_search";
+    const first = similarityDataset(form.dataset1), second = similarityDataset(form.dataset2);
+    if (!first) return libraryMode ? "Choose the query dataset." : "Choose the first dataset.";
+    if (libraryMode && form.dataset2 === "file" && !form.referencePath) return "Choose a reference file.";
+    if (libraryMode && form.dataset2 !== "file" && !second) return "Choose a reference library.";
+    if (!libraryMode && !second) return form.datasets.length < 2 ? "Add a second dataset for metadata-key matching." : "Choose the second dataset.";
+    if (second && second.id === first.id) return "Choose two different datasets.";
+    if (!libraryMode && (!first.columns.includes(form.key1) || !second.columns.includes(form.key2))) return "Choose a key column for both datasets.";
+    const threshold = Number(form.threshold);
+    if (libraryMode && (!String(form.threshold).trim() || !Number.isFinite(threshold) || threshold < 0 || threshold > 1)) return "Score threshold must be a number from 0 to 1.";
+    if (!similarityTolerance(form)) return `Enter a positive m/z tolerance in ${form.toleranceUnit === "Da or ppm" ? "Da and ppm" : form.toleranceUnit}.`;
+    const exponent = Number(form.exponent);
+    if (!String(form.exponent).trim() || !Number.isFinite(exponent) || exponent <= 0) return "Intensity exponent must be a positive number.";
+    const threads = Number(form.threads);
+    if (!Number.isSafeInteger(threads) || threads < 1 || threads > form.maximumThreads) return `Threads must be an integer from 1 to ${form.maximumThreads}.`;
+    return "";
+  }
+
+  function similarityPreview(form) {
+    const count = dataset => Number.isFinite(Number(dataset?.total_rows)) ? Number(dataset.total_rows) : null;
+    const spectra = (n, label) => n === null ? `every ${label} spectrum` : `${n.toLocaleString()} ${label} spectr${n === 1 ? "um" : "a"}`;
+    const first = similarityDataset(form.dataset1), second = similarityDataset(form.dataset2);
+    const n1 = count(first), n2 = count(second);
+    const lines = [];
+    if (form.mode === "library_search") {
+      const reference = form.dataset2 === "file"
+        ? (form.referencePath ? `every spectrum in ${form.referencePath.split(/[\\/]/).pop()}` : "a reference file")
+        : `${spectra(n2, "reference")} (${second?.name || "—"})`;
+      lines.push(`<strong>Library search</strong>: ${spectra(n1, "query")} (${esc(first?.name || "—")}) × ${esc(reference)}${n1 !== null && n2 !== null && form.dataset2 !== "file" ? ` = <strong>${(n1 * n2).toLocaleString()}</strong> pairs` : ""}`);
+    } else {
+      lines.push(`<strong>Key matching</strong>: ${esc(first?.name || "—")} <code>${esc(form.key1)}</code> = ${esc(second?.name || "—")} <code>${esc(form.key2)}</code>${n1 !== null && n2 !== null ? ` · at most <strong>${Math.min(n1, n2).toLocaleString()}</strong> pairs` : ""}`);
+      lines.push("Missing keys and keys found on only one side are skipped; non-missing keys must be unique.");
+    }
+    const tolerance = similarityTolerance(form);
+    lines.push(`${form.method === "reverse_cosine" ? "Reverse cosine" : "Cosine"} similarity · m/z ${tolerance ? esc(tolerance.replace("Da", " Da").replace("ppm", " ppm").replace(",", " or ")) : "—"} · intensity<sup>${esc(form.exponent)}</sup> · ${esc(form.threads)} thread${Number(form.threads) === 1 ? "" : "s"}`);
+    lines.push(`${form.mode === "library_search" ? `Saves pairs scoring ≥ ${esc(form.threshold)}` : "Saves the score of every matched pair"} ${form.includeMatchedData ? "with the matched spectra and metadata" : "as indices and scores only (lightweight)"}.`);
+    lines.push("Uses all spectra of the selected datasets, including unsaved edits; table filters do not apply.");
+    return lines.map(line => `<p>${line}</p>`).join("");
+  }
+
+  function similarityFormMarkup() {
+    if (!similarityForm) return "";
+    const form = similarityForm, libraryMode = form.mode === "library_search";
+    const first = similarityDataset(form.dataset1), second = similarityDataset(form.dataset2);
+    const option = (value, label, selected) => `<option value="${esc(value)}" ${selected ? "selected" : ""}>${esc(label)}</option>`;
+    const datasetSelect = (id, value, items, extra = "") => `<select id="${id}">${items.map(d => option(d.id, d.name, d.id === value)).join("")}${extra}</select>`;
+    const others = form.datasets.filter(d => d.id !== form.dataset1);
+    const keySelect = (id, dataset, value) => `<select id="${id}" ${dataset ? "" : "disabled"}>${(dataset?.columns || []).map(c => option(c, c, c === value)).join("")}</select>`;
+    const problem = similarityFormProblem(form);
+    const busy = form.submitting || form.choosingReference;
+    return `<div class="modal-backdrop" id="similarity-backdrop"><section class="similarity-form" role="dialog" aria-modal="true" aria-labelledby="similarity-form-title">
+      <header><strong id="similarity-form-title">Calculate similarity</strong><button id="close-similarity-form" class="modal-close" aria-label="Close">×</button></header>
+      <fieldset class="similarity-mode"><legend>Pairing</legend>
+        <label><input type="radio" name="similarity-mode" value="library_search" ${libraryMode ? "checked" : ""}> Library search <span>every query × every reference spectrum</span></label>
+        <label><input type="radio" name="similarity-mode" value="by_key" ${libraryMode ? "" : "checked"}> Match by metadata key <span>records sharing the same ID or other key</span></label>
+      </fieldset>
+      <div class="similarity-grid">
+        <label for="similarity-dataset1">${libraryMode ? "Query dataset" : "First dataset"}</label>${datasetSelect("similarity-dataset1", form.dataset1, form.datasets)}
+        ${libraryMode ? `<label for="similarity-dataset2">Reference library</label><div class="similarity-reference">${datasetSelect("similarity-dataset2", form.dataset2, others, option("file", "File…", form.dataset2 === "file"))}${form.dataset2 === "file" ? `<button id="similarity-browse" class="secondary-button" ${busy ? "disabled" : ""}>Browse…</button><span class="similarity-path" title="${esc(form.referencePath)}">${esc(form.referencePath || (form.choosingReference ? "Choosing…" : "No file chosen"))}</span>` : ""}</div>`
+          : `<label for="similarity-dataset2">Second dataset</label>${datasetSelect("similarity-dataset2", form.dataset2, others)}
+             <label for="similarity-key1">Key (first)</label>${keySelect("similarity-key1", first, form.key1)}
+             <label for="similarity-key2">Key (second)</label>${keySelect("similarity-key2", second, form.key2)}`}
+        <label for="similarity-method">Method</label><select id="similarity-method">${option("cosine", "Cosine similarity", form.method === "cosine")}${option("reverse_cosine", "Reverse cosine similarity", form.method === "reverse_cosine")}</select>
+        ${libraryMode ? `<label for="similarity-threshold">Score threshold</label><input id="similarity-threshold" data-similarity-field="threshold" type="number" min="0" max="1" step="0.05" value="${esc(form.threshold)}">` : ""}
+        <label for="similarity-tolerance-unit">m/z tolerance</label><div class="similarity-tolerance"><select id="similarity-tolerance-unit" aria-label="m/z tolerance unit">${SIMILARITY_TOLERANCE_UNITS.map(unit => option(unit, unit, form.toleranceUnit === unit)).join("")}</select>${[["Da", "toleranceDa", 0.001], ["ppm", "tolerancePpm", 1]].filter(([unit]) => form.toleranceUnit.includes(unit)).map(([unit, field, step]) => `<span>±</span><input id="similarity-tolerance-${unit.toLowerCase()}" data-similarity-field="${field}" type="number" min="0" step="${step}" value="${esc(form[field])}" aria-label="m/z tolerance in ${unit}"> ${unit}`).join(" <span>or</span> ")}</div>
+        <label for="similarity-exponent">Intensity exponent</label><input id="similarity-exponent" data-similarity-field="exponent" type="number" min="0" step="0.1" value="${esc(form.exponent)}">
+        <label for="similarity-threads">Threads</label><div class="similarity-threads"><input id="similarity-threads" data-similarity-field="threads" type="number" min="1" max="${form.maximumThreads}" step="1" value="${esc(form.threads)}"><span>1–${form.maximumThreads} (one logical core is kept free)</span></div>
+        <span>Result</span><label class="similarity-check"><input id="similarity-include" type="checkbox" ${form.includeMatchedData ? "checked" : ""}> Include matched spectra and metadata</label>
+      </div>
+      <p class="similarity-hint">With Da or ppm, a peak matches within either tolerance (ppm of the mean m/z of two peaks). Intensity exponent 0.5 is the square root.</p>
+      <div class="similarity-preview" id="similarity-preview" aria-live="polite">${similarityPreview(form)}</div>
+      <div class="similarity-problem" id="similarity-problem" role="alert">${esc(form.error || problem)}</div>
+      <footer><button id="cancel-similarity-form" class="secondary-button">Cancel</button><button id="submit-similarity-form" class="dataset-primary secondary-button" ${problem || busy ? "disabled" : ""}>${form.submitting ? "Choosing where to save…" : "Calculate and save…"}</button></footer>
+    </section></div>`;
+  }
+
   let selectedColumns = [];
   let knownColumnsKey = "";
   let loadingPage = false;
@@ -377,6 +505,7 @@
           ${pageRows.length ? pageRows.map(({ row, index }) => { const smiles = smilesColumn ? String(row?.[smilesColumn] ?? "").trim() : ""; return `<tr class="${selectedSpectrumIndex === index ? "selected-record" : ""}"><td class="row-column">${rowOffset() + index + 1}</td><td class="spectrum-column"><button class="spectrum-button" data-spectrum-index="${index}" title="Show spectrum ${rowOffset() + index + 1}"><svg viewBox="0 0 28 22"><path d="M2 19h24M4 18V13m4 5V7m4 11v-4m4 4V3m4 15V9m4 9v-7"/></svg></button></td>${showStructureColumn ? `<td class="structure-column">${smiles ? `<button class="structure-button" data-structure-index="${index}" aria-label="View structure" title="View structure"><svg viewBox="0 0 28 24" aria-hidden="true" focusable="false"><path class="structure-edges" d="M14 3 21.8 7.5v9L14 21l-7.8-4.5v-9Z"/><g class="structure-nodes"><circle cx="14" cy="3" r="2.1"/><circle cx="21.8" cy="7.5" r="2.1"/><circle cx="21.8" cy="16.5" r="2.1"/><circle cx="14" cy="21" r="2.1"/><circle cx="6.2" cy="16.5" r="2.1"/><circle cx="6.2" cy="7.5" r="2.1"/></g></svg></button>` : ""}</td>` : ""}${selectedColumns.map((c) => `<td ${editingUnlocked ? 'tabindex="0"' : ""} data-edit-row="${index}" data-edit-column="${esc(c)}" class="${editingUnlocked ? "editable-cell" : "locked-cell"}" title="${editingUnlocked ? `Double-click or press Enter to edit: ${esc(display(row?.[c]))}` : `${viewerOptions.behavior.lockedCellCopyGesture === "leftClick" ? "Click" : "Right-click"} to copy the complete value`}">${esc(display(row?.[c]))}</td>`).join("")}</tr>`; }).join("") : `<tr><td colspan="${selectedColumns.length + 2 + (showStructureColumn ? 1 : 0)}" class="empty">No spectra match the filters.</td></tr>`}
         </tbody></table></div>
         <div class="pagination"><span>${start}–${end} of ${totalRows()}</span><div class="page-controls"><button id="prev-page" ${page() === 0 || loadingPage ? "disabled" : ""}>‹</button><span><input id="page-input" type="number" min="1" max="${pageCount()}" value="${page() + 1}" ${loadingPage ? "disabled" : ""}/> / ${pageCount()}</span><button id="next-page" ${page() >= pageCount() - 1 || loadingPage ? "disabled" : ""}>›</button></div><span>${loadingPage ? "Loading…" : `${pageSize()} rows/page`}</span></div>
+        ${similarityFormMarkup()}
         ${structurePreview ? `<div class="structure-backdrop" id="structure-backdrop"><section class="structure-preview" role="dialog" aria-modal="true" aria-labelledby="structure-title"><header><strong id="structure-title">Structure</strong><button id="close-structure" class="modal-close" aria-label="Close structure preview">×</button></header><div class="structure-canvas">${structurePreview.url ? `<img src="${esc(structurePreview.url)}" alt="Chemical structure for ${esc(structurePreview.smiles)}">` : `<span>Rendering structure…</span>`}</div><code>${esc(structurePreview.smiles)}</code></section></div>` : ""}
       </div>`;
 
@@ -592,6 +721,7 @@
       moreActionsOpen = false; calculatingSimilarity = true; render();
       vscode.postMessage({ type: "calculate-similarity", datasetId: activeDatasetId });
     });
+    bindSimilarityForm();
     document.getElementById("settings-button")?.addEventListener("click", () => {
       moreActionsOpen = false;
       if (viewerOptions.settings.length) { settingsOpen = true; render(); }
@@ -642,6 +772,70 @@
     }));
     document.getElementById("close-structure")?.addEventListener("click", () => { closeStructurePreview(); render(); });
     document.getElementById("structure-backdrop")?.addEventListener("click", event => { if (event.target.id === "structure-backdrop") { closeStructurePreview(); render(); } });
+  }
+
+  function bindSimilarityForm() {
+    const form = similarityForm;
+    if (!form) return;
+    // Rerender after a choice that changes the form, keeping the focus on the changed control.
+    const rerender = id => { form.error = ""; render(); document.getElementById(id)?.focus(); };
+    const close = () => { similarityForm = null; render(); };
+    const chooseReference = () => { form.choosingReference = true; vscode.postMessage({ type: "choose-similarity-reference" }); };
+    const refresh = () => {
+      form.error = "";
+      const problem = similarityFormProblem(form);
+      document.getElementById("similarity-preview").innerHTML = similarityPreview(form);
+      document.getElementById("similarity-problem").textContent = problem;
+      document.getElementById("submit-similarity-form").disabled = Boolean(problem) || form.submitting || form.choosingReference;
+    };
+    document.querySelectorAll('[name="similarity-mode"]').forEach(input => input.addEventListener("change", () => {
+      form.mode = input.value;
+      const others = form.datasets.filter(d => d.id !== form.dataset1);
+      if (form.mode === "by_key" && !similarityDataset(form.dataset2)) {
+        form.dataset2 = others[0]?.id || ""; form.key2 = defaultSimilarityKey(others[0]);
+      }
+      rerender(input.id);
+    }));
+    document.getElementById("similarity-dataset1")?.addEventListener("change", event => {
+      form.dataset1 = event.target.value; form.key1 = defaultSimilarityKey(similarityDataset(form.dataset1));
+      if (form.dataset2 === form.dataset1) {
+        const other = form.datasets.find(d => d.id !== form.dataset1);
+        form.dataset2 = other?.id || (form.mode === "library_search" ? "file" : ""); form.key2 = defaultSimilarityKey(other);
+      }
+      rerender(event.target.id);
+    });
+    document.getElementById("similarity-dataset2")?.addEventListener("change", event => {
+      form.dataset2 = event.target.value; form.key2 = defaultSimilarityKey(similarityDataset(form.dataset2));
+      if (form.dataset2 === "file" && !form.referencePath) chooseReference();
+      rerender(event.target.id);
+    });
+    document.getElementById("similarity-browse")?.addEventListener("click", () => { chooseReference(); rerender("similarity-browse"); });
+    for (const [id, field] of [["similarity-key1", "key1"], ["similarity-key2", "key2"], ["similarity-method", "method"]]) {
+      document.getElementById(id)?.addEventListener("change", event => { form[field] = event.target.value; refresh(); });
+    }
+    document.querySelectorAll("[data-similarity-field]").forEach(input => input.addEventListener("input", () => {
+      form[input.dataset.similarityField] = input.value; refresh();
+    }));
+    document.getElementById("similarity-tolerance-unit")?.addEventListener("change", event => { form.toleranceUnit = event.target.value; rerender(event.target.id); });
+    document.getElementById("similarity-include")?.addEventListener("change", event => { form.includeMatchedData = event.target.checked; refresh(); });
+    document.getElementById("close-similarity-form")?.addEventListener("click", close);
+    document.getElementById("cancel-similarity-form")?.addEventListener("click", close);
+    document.getElementById("similarity-backdrop")?.addEventListener("click", event => { if (event.target.id === "similarity-backdrop") close(); });
+    document.getElementById("submit-similarity-form")?.addEventListener("click", () => {
+      if (similarityFormProblem(form) || form.submitting) return;
+      const libraryMode = form.mode === "library_search", file = libraryMode && form.dataset2 === "file";
+      form.submitting = true; form.error = "";
+      vscode.postMessage({
+        type: "similarity-submit", mode: form.mode, dataset1: form.dataset1,
+        dataset2: file ? undefined : form.dataset2, reference_path: file ? form.referencePath : undefined,
+        parameters: {
+          method: form.method, mz_tolerance: similarityTolerance(form), intensity_exponent: Number(form.exponent),
+          include_matched_data: form.includeMatchedData, threads: Number(form.threads),
+          ...(libraryMode ? { threshold: Number(form.threshold) } : { key1: form.key1, key2: form.key2 }),
+        },
+      });
+      rerender("submit-similarity-form");
+    });
   }
 
   function closeStructurePreview() {
@@ -848,12 +1042,33 @@
       exportProgress = null;
       render();
       vscode.postMessage({ type: "export-error-notification", message: message.message });
+    } else if (message?.type === "similarity-options") {
+      calculatingSimilarity = false;
+      openSimilarityForm(message);
+      render();
+      document.getElementById("submit-similarity-form")?.focus();
+    } else if (message?.type === "similarity-reference" && similarityForm) {
+      similarityForm.choosingReference = false;
+      if (message.path) { similarityForm.referencePath = String(message.path); similarityForm.dataset2 = "file"; }
+      render();
+    } else if (message?.type === "similarity-save-cancelled" && similarityForm) {
+      similarityForm.submitting = false;
+      render();
+    } else if (message?.type === "similarity-form-error" && similarityForm) {
+      similarityForm.submitting = false;
+      similarityForm.error = String(message.message || "Could not start the calculation.");
+      render();
+    } else if (message?.type === "similarity-start") {
+      similarityForm = null;
+      calculatingSimilarity = true;
+      render();
     } else if (message?.type === "similarity-progress") {
       calculatingSimilarity = true;
       similarityProgress = Number.isFinite(Number(message.percent)) ? Number(message.percent) : null;
       render();
     } else if (["similarity-complete", "similarity-cancelled", "similarity-error"].includes(message?.type)) {
       calculatingSimilarity = false;
+      if (message.type !== "similarity-complete") similarityForm = null;
       similarityProgress = null;
       render();
       if (message.type === "similarity-error") vscode.postMessage({ type: "similarity-error-notification", message: message.message });
@@ -890,7 +1105,9 @@
       if (!e.repeat) requestExport();
       return;
     }
-    if (e.key === "Escape" && structurePreview) {
+    if (e.key === "Escape" && similarityForm) {
+      e.preventDefault(); similarityForm = null; render();
+    } else if (e.key === "Escape" && structurePreview) {
       e.preventDefault(); closeStructurePreview(); render();
     } else if (e.key === "Escape" && (datasetMenuOpen || moreActionsOpen || columnMenuOpen || filterMenuOpen)) {
       const focusTarget = datasetMenuOpen ? "dataset-select" : columnMenuOpen ? "columns-button" : filterMenuOpen ? "filter-button" : "more-actions-button";

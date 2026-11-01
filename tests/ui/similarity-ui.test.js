@@ -16,9 +16,8 @@ const { findBackendExecutable, similaritySettings } = host;
 const backendExecutable = findBackendExecutable({ roots: [root] });
 
 async function wizardTests() {
-  let choices = [], inputs = [], requests = [], messages = [];
-  let selectedMode = "library_search";
-  let browseReference = false;
+  let choices = [], requests = [], messages = [];
+  let saveTarget = (options) => options.defaultUri;
   let writtenImage = null;
   const vscode = {
     Uri: {
@@ -27,30 +26,8 @@ async function wizardTests() {
     },
     workspace: { fs: { writeFile: async (target, bytes) => { writtenImage = { target, bytes }; } } },
     window: {
-      showQuickPick: async (items, options) => {
-        choices.push(options);
-        if (options.title === "Calculate similarity") {
-          return items.find((item) => item.mode === selectedMode);
-        }
-        if (options.title === "Library search: reference library" && browseReference) {
-          return items.at(-1);
-        }
-        return items[0];
-      },
-      showInputBox: async (options) => {
-        assert.ok(options.validateInput("NaN"));
-        assert.ok(options.validateInput("-1"));
-        if (options.title.includes("exponent")) assert.ok(options.validateInput("0"));
-        if (options.title.includes("m/z tolerance")) {
-          assert.ok(options.validateInput("0.01"));
-          assert.ok(options.validateInput("0Da,0ppm"));
-          assert.equal(options.validateInput("10 PPM"), undefined);
-        }
-        assert.equal(options.validateInput(options.value), undefined);
-        inputs.push(options); return options.value;
-      },
-      showOpenDialog: async () => [{ fsPath: "/tmp/reference.msp" }],
-      showSaveDialog: async (options) => options.defaultUri,
+      showQuickPick: async (items, options) => { choices.push(options); return items[0]; },
+      showSaveDialog: async (options) => saveTarget(options),
       showInformationMessage: () => {},
     },
   };
@@ -59,61 +36,71 @@ async function wizardTests() {
     "\nmodule.exports.Provider = MSEntityViewerProvider;", context);
   const provider = new context.module.exports.Provider({ extensionUri: "/extension" });
   const datasets = [0, 1, 2].map((i) => ({ id: `dataset${i}`, name: `dataset${i}`, columns: ["Name", "SpecID"] }));
-  let defaults = similaritySettings();
-  const run = (items, active = "dataset0") => provider.configureSimilarity(
-    items, active, { fsPath: "/tmp/source.msds" },
-    (m) => requests.push(m), (m) => messages.push(m), () => false, defaults, host
-  );
-  await run(datasets.slice(0, 2));
-  assert.equal(choices.length, 5);
-  assert.equal(inputs.length, 3);   // threshold, m/z tolerance, intensity exponent
-  assert.equal(requests[0].parameters.method, "cosine");
-  assert.equal(requests[0].parameters.mz_tolerance, "0.01Da,10ppm");
-  assert.equal(requests[0].parameters.intensity_exponent, 1);
+  const defaults = similaritySettings({ threads: 1 });   // any machine allows 1 thread
+  const submit = (form) => {
+    requests = []; messages = [];
+    return provider.startSimilarity(form, datasets, { fsPath: "/tmp/source.msds" },
+      (m) => requests.push(m), (m) => messages.push(m), () => false, defaults, host);
+  };
+  const library = { mode: "library_search", dataset1: "dataset0", dataset2: "dataset1",
+    parameters: { method: "reverse_cosine", threshold: 0.6, mz_tolerance: "10 PPM", intensity_exponent: 0.5,
+      include_matched_data: false, key1: "ignored" } };
+
+  // One submission carries every choice; the save dialog is the only host dialog.
+  await submit(library);
+  assert.deepEqual(messages.map((m) => m.type), ["similarity-start"]);
+  assert.equal(requests[0].type, "calculate-similarity");
   assert.equal(requests[0].mode, "library_search");
   assert.equal(requests[0].dataset1, "dataset0");
   assert.equal(requests[0].dataset2, "dataset1");
-  assert.equal(requests[0].parameters.threshold, 0.8);
-  assert.equal(requests[0].parameters.include_matched_data, true);
+  assert.equal(requests[0].path, path.join("/tmp", "similarity.mssim"));
+  assert.deepEqual(JSON.parse(JSON.stringify(requests[0].parameters)), { method: "reverse_cosine", threads: 1,
+    mz_tolerance: "10ppm", intensity_exponent: 0.5, include_matched_data: false, threshold: 0.6 });
 
-  // Configured defaults are the initial values; the default method is listed first.
-  defaults = similaritySettings({ method: "reverse_cosine", threshold: 0.6, mz_tolerance: "10ppm",
-    include_matched_data: false, threads: 2 });
-  inputs = []; requests = [];
-  await run(datasets.slice(0, 2));
-  assert.deepEqual(JSON.parse(JSON.stringify(requests[0].parameters)), { method: "reverse_cosine", threads: 2,
-    threshold: 0.6, mz_tolerance: "10ppm", intensity_exponent: 1, include_matched_data: false });
-  const toleranceInput = inputs.find((options) => options.title.includes("m/z tolerance"));
-  assert.equal(toleranceInput.value, "10ppm");
-  defaults = similaritySettings();
-
-  choices = []; inputs = []; requests = [];
-  selectedMode = "by_key";
-  await run(datasets, "dataset1");
-  assert.equal(requests[0].mode, "by_key");
-  assert.equal(requests[0].dataset1, "dataset1");
-  assert.equal(requests[0].dataset2, "dataset0");
-  assert.equal(requests[0].parameters.key1, "SpecID");
-  assert.equal(requests[0].parameters.key2, "SpecID");
-
-  selectedMode = "library_search";
-  browseReference = true;
-  requests = [];
-  await run(datasets.slice(0, 1));
+  await submit({ ...library, dataset2: undefined, reference_path: "/tmp/reference.msp" });
   assert.equal(requests[0].reference_path, "/tmp/reference.msp");
+  assert.equal(requests[0].dataset2, undefined);
 
-  vscode.window.showQuickPick = async () => undefined;
-  requests = []; messages = [];
-  await run(datasets);
+  await submit({ mode: "by_key", dataset1: "dataset1", dataset2: "dataset0",
+    parameters: { method: "cosine", mz_tolerance: "0.01Da,10ppm", intensity_exponent: 1,
+      include_matched_data: true, key1: "SpecID", key2: "Name", threshold: 0.9 } });
+  assert.equal(requests[0].mode, "by_key");
+  assert.equal(requests[0].parameters.key1, "SpecID");
+  assert.equal(requests[0].parameters.key2, "Name");
+  assert.equal(requests[0].parameters.threshold, undefined);
+
+  // Invalid choices throw (the host answers similarity-form-error) and send nothing.
+  for (const [form, pattern] of [
+    [{ ...library, mode: "pairs" }, /paired/],
+    [{ ...library, dataset1: "missing" }, /query dataset/],
+    [{ ...library, dataset2: "dataset0" }, /different/],
+    [{ ...library, dataset2: undefined }, /reference/],
+    [{ ...library, parameters: { ...library.parameters, threshold: 2 } }, /threshold/],
+    [{ ...library, parameters: { ...library.parameters, mz_tolerance: "0Da" } }, /positive/],
+    [{ ...library, parameters: { ...library.parameters, intensity_exponent: 0 } }, /intensity_exponent/],
+    [{ ...library, parameters: { ...library.parameters, threads: 0 } }, /threads/],
+    [{ ...library, parameters: { ...library.parameters, threads: 100000 } }, /at most \d+ threads/],
+    [{ mode: "by_key", dataset1: "dataset0", parameters: { key1: "SpecID", key2: "SpecID" } }, /second dataset/],
+    [{ mode: "by_key", dataset1: "dataset0", dataset2: "dataset1", parameters: { key1: "SpecID", key2: "Missing" } }, /key column/],
+  ]) {
+    await assert.rejects(submit(form), pattern);
+    assert.equal(requests.length, 0);
+  }
+
+  // A cancelled save dialog keeps the form open.
+  saveTarget = () => undefined;
+  await submit(library);
   assert.equal(requests.length, 0);
-  assert.equal(messages[0].type, "similarity-cancelled");
+  assert.deepEqual(messages.map((m) => m.type), ["similarity-save-cancelled"]);
+  saveTarget = () => ({ fsPath: "/tmp/result.txt" });
+  await assert.rejects(submit(library), /\.mssim/);
+  saveTarget = (options) => options.defaultUri;
   const savedPath = await provider.saveImage(
     { fsPath: "/tmp/data/result.mssim" },
     { filename: "similarity-box.png", bytes: [137, 80, 78, 71] }
   );
   assert.equal(savedPath, "/tmp/data/similarity-box.png");
   assert.deepEqual(Array.from(writtenImage.bytes), [137, 80, 78, 71]);
-  vscode.window.showQuickPick = async (items, options) => { choices.push(options); return items[0]; };
   const savedPeaksPath = await provider.savePeaks(
     { fsPath: "/tmp/data/source.msds" },
     { basename: "upper-vs-lower", sourcePath: "/tmp/data/source.msds",

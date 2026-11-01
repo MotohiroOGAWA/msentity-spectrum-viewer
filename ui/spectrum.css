@@ -56,6 +56,7 @@ h2 { font-size: 15px; margin: 0 0 10px; color: var(--text); }
 .slot-action-spacer { width: 26px; height: 26px; }
 .pin-button { display: inline-grid; place-items: center; width: 26px; height: 26px; border: 0; padding: 2px; opacity: .45; background: transparent; filter: grayscale(1); }
 .pin-button.pinned { opacity: 1; filter: none; background: var(--row-hover); }
+.similarity-note { flex-basis: 100%; color: var(--muted); font-size: 12px; }
 .comparison-hint { padding-left: 34px; font-style: italic; }
 .remove-spectrum { display: inline-grid; place-items: center; width: 26px; height: 26px; padding: 3px; background: transparent; border: 0; }
 .remove-spectrum:hover { background: var(--row-hover); }
@@ -64,6 +65,8 @@ h2 { font-size: 15px; margin: 0 0 10px; color: var(--text); }
 .remove-spectrum .trash-inner { stroke: #fff; stroke-width: 1.4; }
 .similarity-row { margin-left: 34px; flex-wrap: wrap; }
 .similarity-row label { display: flex; align-items: center; gap: 7px; }
+.similarity-tolerance { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
+.similarity-tolerance > span { color: var(--muted, inherit); }
 .similarity-row select { padding: 4px 7px; color: var(--vscode-input-foreground, var(--text)); background: var(--vscode-input-background, var(--panel)); border: 1px solid var(--vscode-input-border, var(--border)); border-radius: 4px; }
 .similarity-row input { width: 82px; padding: 4px 6px; color: var(--vscode-input-foreground, var(--text)); background: var(--vscode-input-background, var(--panel)); border: 1px solid var(--vscode-input-border, var(--border)); border-radius: 4px; }
 .similarity-row output { min-width: 64px; color: var(--text); font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; }

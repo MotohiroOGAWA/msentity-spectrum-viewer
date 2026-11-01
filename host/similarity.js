@@ -11,7 +11,7 @@ const SIMILARITY_DEFAULTS = Object.freeze({
   mz_tolerance: "0.01Da,10ppm", // peaks match within either term (see parseMzTolerance)
   intensity_exponent: 1,       // intensities are raised to this power (> 0)
   include_matched_data: true,  // library search: store the matched spectra in the result
-  threads: 0,                  // 0 = all hardware threads
+  threads: 1,                  // worker threads, an integer >= 1
 });
 
 const METHODS = ["cosine", "reverse_cosine"];
@@ -80,7 +80,7 @@ function similaritySettings(overrides = {}) {
     throw new Error(`Similarity setting ${error.message}`);
   }
   number("intensity_exponent", (v) => v > 0, "a number > 0");
-  number("threads", (v) => Number.isSafeInteger(v) && v >= 0, "an integer >= 0");
+  number("threads", (v) => Number.isSafeInteger(v) && v >= 1, "an integer >= 1");
   if (typeof settings.include_matched_data !== "boolean") {
     throw new Error("Similarity setting include_matched_data must be true or false");
   }
@@ -89,13 +89,17 @@ function similaritySettings(overrides = {}) {
 
 // Defaults of the score shown when two spectra are compared in the spectrum
 // view (ui/spectrum.js, message comparison-settings). This score is computed in
-// the UI and matches peaks within a Da tolerance only.
+// the UI and matches peaks within a tolerance in Da or in ppm.
 const COMPARISON_DEFAULTS = Object.freeze({
   method: "dot",               // "dot", "reverse", "modified", or "bonanza"
-  tolerance_da: 0.05,          // peaks match within ± this many Da, > 0 and <= 10
+  tolerance_unit: "Da or ppm", // initial unit: "Da", "ppm", or "Da or ppm" (within either tolerance)
+  tolerance_da: 0.01,          // peaks match within ± this many Da, > 0 and <= 10
+  tolerance_ppm: 10,           // peaks match within ± this many ppm of their mean m/z, > 0 and <= 1000
+  precursor_column: "",        // metadata column of the precursor m/z; "" tries PrecursorMZ, precursor_mz, PEPMASS, ParentMZ
 });
 
 const COMPARISON_METHODS = ["dot", "reverse", "modified", "bonanza"];
+const COMPARISON_TOLERANCE_UNITS = ["Da", "ppm", "Da or ppm"];
 
 /**
  * COMPARISON_DEFAULTS with `overrides` applied, validated like similaritySettings.
@@ -111,9 +115,18 @@ function comparisonSettings(overrides = {}) {
   if (!COMPARISON_METHODS.includes(settings.method)) {
     throw new Error(`Comparison setting method must be one of ${COMPARISON_METHODS.join(", ")}, got ${JSON.stringify(settings.method)}`);
   }
-  const tolerance = settings.tolerance_da;
-  if (typeof tolerance !== "number" || !Number.isFinite(tolerance) || tolerance <= 0 || tolerance > 10) {
-    throw new Error(`Comparison setting tolerance_da must be a number > 0 and <= 10, got ${JSON.stringify(tolerance)}`);
+  if (!COMPARISON_TOLERANCE_UNITS.includes(settings.tolerance_unit)) {
+    throw new Error(`Comparison setting tolerance_unit must be one of ${COMPARISON_TOLERANCE_UNITS.join(", ")}, got ${JSON.stringify(settings.tolerance_unit)}`);
+  }
+  if (typeof settings.precursor_column !== "string") {
+    throw new Error(`Comparison setting precursor_column must be a column name, or empty to detect it, got ${JSON.stringify(settings.precursor_column)}`);
+  }
+  settings.precursor_column = settings.precursor_column.trim();
+  for (const [name, maximum] of [["tolerance_da", 10], ["tolerance_ppm", 1000]]) {
+    const tolerance = settings[name];
+    if (typeof tolerance !== "number" || !Number.isFinite(tolerance) || tolerance <= 0 || tolerance > maximum) {
+      throw new Error(`Comparison setting ${name} must be a number > 0 and <= ${maximum}, got ${JSON.stringify(tolerance)}`);
+    }
   }
   return Object.freeze(settings);
 }

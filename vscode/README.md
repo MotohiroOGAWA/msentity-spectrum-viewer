@@ -109,11 +109,18 @@ independently: new selections replace the unpinned side, and neither side
 changes while both are pinned. The lower spectrum can also be removed. While
 comparing, similarity is calculated automatically with a selectable dot
 product, reverse dot product, modified dot product, or BONANZA score. Fragment
-matching tolerance is editable in Da and defaults to ±0.05 Da (the initial
-method and tolerance are the `msentitySpectrumViewer.spectrumComparison`
-settings). Modified dot
-product and BONANZA also consider precursor-mass-shifted neutral-loss matches.
-The score and matched-peak count update when the method or tolerance changes.
+matching tolerance is editable in Da, in ppm (of the mean m/z of two peaks),
+or as **Da or ppm** (± ~ Da or ± ~ ppm; a peak matches within either). The
+defaults are **Da or ppm** with ±0.01 Da and ±10 ppm; switching the unit keeps both values (the
+initial method, unit, and tolerances are the
+`msentitySpectrumViewer.spectrumComparison` settings). Modified dot
+product and BONANZA also consider precursor-mass-shifted neutral-loss matches,
+so they need a precursor m/z on both spectra: it is read from the
+`msentitySpectrumViewer.spectrumComparison.precursorColumn` metadata column
+(empty by default, which detects it automatically: the first of `PrecursorMZ`, `precursor_mz`, `PEPMASS`, and
+`ParentMZ` with a positive number; names are case-insensitive). When either
+spectrum has none, both methods are disabled and the dot product is shown.
+The score and matched-peak count update when the method, tolerance, or unit changes.
 The metadata area below the plot shows separate **Upper Metadata** and **Lower
 Metadata** panels during comparison, using the columns from each spectrum's
 source dataset.
@@ -152,29 +159,38 @@ should remain in an editor pane beside the dataset table.
 
 ## Calculate similarity and run a library search
 
-Click **Calculate similarity…** next to **Reload**, then choose **Library
-search** or **Match by metadata key**. A library search compares every spectrum
-in the query dataset with every spectrum in a reference library. The reference
-can be an entry already loaded with **Add dataset…**, or an MSDS, MSP, MGF, TSV,
-or CSV file selected for that calculation. Choose cosine or reverse cosine,
-set the score threshold (default `0.8`), the m/z tolerance (default
-`0.01Da,10ppm`; `10ppm` or `0.01Da` uses one rule only), and the intensity
-exponent before saving the result as **`.mssim`**. Two peaks match when they
-are within the Da tolerance or the ppm tolerance; each peak matches at
-most one peak, the closest one. The initial choices come from the
-`msentitySpectrumViewer.similarity` settings. Scores are calculated by
-[msentity-similarity](https://github.com/MotohiroOGAWA/msentity-similarity)
-on all CPU cores.
+Click **Calculate similarity** in **More ...** to open one form with every
+choice: **Library search** or **Match by metadata key**, the datasets, the
+method, and the parameters. A preview below the form summarizes the
+calculation — the datasets and their spectrum counts, the number of pairs, the
+score rule, and what is saved — and updates as you edit; a problem with the
+choices is shown there and disables **Calculate and save…**, which then asks
+where to save the result as **`.mssim`**.
 
-Metadata-key matching preserves the previous workflow. Select two loaded
-datasets and a key for each side. Non-missing keys must be unique within each
+A library search compares every spectrum in the query dataset with every
+spectrum in a reference library. The reference can be an entry already loaded
+with **Add dataset…**, or an MSDS, MSP, MGF, TSV, or CSV file chosen with
+**File…** / **Browse…** for that calculation. Choose cosine or reverse cosine,
+the score threshold (default `0.8`), the m/z tolerance unit — **Da or ppm**
+(default; a peak matches within either), **Da**, or **ppm** (of the mean m/z
+of two peaks) — with its values (default ±0.01 Da and ±10 ppm), and the
+intensity exponent. Each peak matches at most one peak, the closest one. The
+initial choices come from the `msentitySpectrumViewer.similarity` settings;
+the m/z tolerance shares `toleranceUnit`, `toleranceDa`, and `tolerancePpm` of
+`msentitySpectrumViewer.spectrumComparison` with the comparison view. Scores are calculated by
+[msentity-similarity](https://github.com/MotohiroOGAWA/msentity-similarity)
+with the chosen number of threads (default 1; at most the logical cores
+minus one, so one core is always left free).
+
+Metadata-key matching selects two loaded datasets and a key column for each
+side. Non-missing keys must be unique within each
 dataset. Duplicate values produce an error because they create one-to-many or
 many-to-many pairings. Missing keys and keys present on only one side are
 skipped.
 
 Both modes use the entire loaded datasets, including unsaved SpecID edits;
-table filters do not restrict calculation. Choose **Include matched data** to
-make the result self-contained, or **Lightweight result** to save only indices,
+table filters do not restrict calculation. Tick **Include matched spectra and
+metadata** to make the result self-contained, or clear it to save only indices,
 scores, and calculation metadata. Embedded results store each unique matched
 record once and refer to it by number from every result row, so one spectrum
 matching many candidates does not duplicate its metadata or peaks.
@@ -280,13 +296,16 @@ discards assignments that have not been exported.
   `structurePreviewWidth`, `structurePreviewHeight`: structure previews.
 <!-- rdkit:end -->
 - `msentitySpectrumViewer.similarity.*`: defaults of **Calculate similarity…** —
-  `method` (`cosine`), `threshold` (`0.8`), `mzTolerance` (`0.01Da,10ppm`),
-  `intensityExponent` (`1`), `includeMatchedData` (`true`), `threads` (`0` =
-  all cores). `mzTolerance` is `<value>Da` and/or `<value>ppm` joined by a
-  comma (e.g. `10ppm` or `0.01Da` for one rule only); peaks match within either.
+  `method` (`cosine`), `threshold` (`0.8`), `intensityExponent` (`1`),
+  `includeMatchedData` (`true`), `threads` (`1`; at most the logical cores
+  minus one, and also editable in the form). The m/z tolerance comes from the
+  `spectrumComparison.tolerance*` settings below.
 - `msentitySpectrumViewer.spectrumComparison.method` (`dot`, `reverse`,
-  `modified`, `bonanza`) and `toleranceDa` (`0.05`): initial score settings
-  when two spectra are compared.
+  `modified`, `bonanza`), `toleranceUnit` (`Da or ppm`, `Da`, or `ppm`),
+  `toleranceDa` (`0.01`), `tolerancePpm` (`10`), and `precursorColumn`
+  (empty to detect automatically, or the metadata column of the precursor m/z): initial score settings when two spectra
+  are compared. `toleranceUnit`, `toleranceDa`, and `tolerancePpm` are also
+  the initial m/z tolerance of **Calculate similarity**.
 - `msentitySpectrumViewer.backendPath`: use another `msentity-viewer-backend`
   executable (development builds).
 

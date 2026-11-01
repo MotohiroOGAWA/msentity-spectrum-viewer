@@ -80,7 +80,7 @@ Every request may carry `dataset_id` (default: the opened file),
 | `update-peak-cell` | `row_id`, `peak_index`, `column`, `value` | `peak-record` {`modified`: true} |
 | `assign-spec-id` | `prefix`, `overwrite` | `spec-id-complete` {`total_rows`} or `spec-id-error` |
 | `export` | `path`, `file_type`, `filters`, `sort`, `columns` | `export-start`, `export-progress`…, `export-complete` {`path`, `total_rows`} or `export-error` |
-| `similarity-options` | | `similarity-options` {`datasets` [{`id`, `name`, `columns`}], `active_dataset_id`} |
+| `similarity-options` | | `similarity-options` {`datasets` [{`id`, `name`, `columns`, `total_rows`}], `active_dataset_id`} |
 | `calculate-similarity` | see below | `similarity-progress`…, `similarity-complete` {`path`, `total_rows`, `candidate_pairs`} or `similarity-error` |
 | `column-values` | `request_id`, `column` or `detect_smiles`: true, `filters` | `column-values` {`request_id`, `column`, `values`, `row_ids`, `total_rows`} or {`error`} |
 | `render-structure` | `smiles`, `width`, `height` | answered by the host: `structure-rendered` {`smiles`, `svg`} or `chemistry-error` |
@@ -153,7 +153,7 @@ display filter/sort views.
                 "key1": "SpecID", "key2": "SpecID",   // by_key
                 "mz_tolerance": "0.01Da,10ppm",   // peaks match within either term;
                                                   // e.g. "10ppm" or "0.01Da" uses one rule only
-                "intensity_exponent": 1.0, "threads": 0,
+                "intensity_exponent": 1.0, "threads": 1,   // >= 1; default 1
                 "include_matched_data": true}}        // default: true for library_search, false for by_key
 ```
 
@@ -203,9 +203,13 @@ The panel has no backend of its own. The host sends it:
   `title`, `datasetId`, `datasetName`, `datasetPath` (the dataset viewer posts
   this payload as `open-spectrum`);
 * `{"type": "spectrum-comparison", "top": {...}, "bottom": {...}, "method": "cosine"}`;
-* `{"type": "comparison-settings", "method": "dot", "tolerance_da": 0.05}` —
-  optional; the initial score method (`dot`, `reverse`, `modified`, `bonanza`)
-  and the ± Da matching tolerance of a comparison. Send it before the spectra;
+* `{"type": "comparison-settings", "method": "dot", "tolerance_unit": "Da or ppm", "tolerance_da": 0.01, "tolerance_ppm": 10, "precursor_column": ""}` —
+  optional; the initial score method (`dot`, `reverse`, `modified`, `bonanza`),
+  the tolerance unit (`Da`, `ppm`, or `Da or ppm`: within either), and the
+  ± Da and ± ppm matching tolerances of a comparison (ppm of the mean m/z of
+  two peaks), and the metadata column of the precursor m/z (`""`, the default, detects the first
+  of `PrecursorMZ`, `precursor_mz`, `PEPMASS`, `ParentMZ`), which `modified` and
+  `bonanza` need on both spectra. Send it before the spectra;
   `comparisonSettings()` of the host library gives validated values;
 * `peak-record` and `peak-columns-updated` from the dataset backend.
 
@@ -236,7 +240,9 @@ Dataset table (`ui/viewer.js`):
 | `drop-datasets` {`paths`, `uris`, `files` [{`name`, `data` (base64)}]} | `add-dataset` for each (files are copied to a temporary directory) |
 | `export-dataset` {`datasetId`, `datasetPath`, `filters`, `sort`, `columns`} | asks format and path → `export` {`path`, `file_type`, …}; cancelled: UI `export-cancelled` |
 | `assign-spec-id` {`datasetId`, `hasSpecId`} | asks the prefix (and confirms replacement) → `assign-spec-id`; cancelled: UI `spec-id-cancelled` |
-| `calculate-similarity` {`datasetId`} | `similarity-options`, dialogs → UI `similarity-start`, `calculate-similarity`; cancelled: UI `similarity-cancelled` |
+| `calculate-similarity` {`datasetId`} | `similarity-options`; the host forwards it to the UI, optionally with `defaults` (as `similaritySettings()`) and `tolerance` {`unit` (`Da`, `ppm`, or `Da or ppm`), `da`, `ppm`} (otherwise the form reads `defaults.mz_tolerance`) and `max_threads` (the largest threads choice; otherwise the browser's logical cores minus one), and the UI opens the Calculate similarity form |
+| `choose-similarity-reference` | asks for a reference file → UI `similarity-reference` {`path`, or `null` when cancelled} |
+| `similarity-submit` {`mode`, `dataset1`, `dataset2` or `reference_path`, `parameters`} | validates and asks for the result path → UI `similarity-start`, `calculate-similarity`; cancelled: UI `similarity-save-cancelled`; invalid: UI `similarity-form-error` {`message`} (the form stays open) |
 | `render-structure` {`smiles`} | `render-structure` {`smiles`, `width`, `height`} |
 | `calculate-structure-counts` {`datasetId`, `filters`} | `calculate-structure-counts` |
 | `open-spectrum` {`payload`} | shows the payload in the spectrum component (`spectrum`) |
