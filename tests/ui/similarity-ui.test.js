@@ -127,7 +127,7 @@ async function browserTests() {
   const server = http.createServer((request, response) => {
     if (request.url === "/") {
       response.setHeader("Content-Type", "text/html");
-      response.end(`<!doctype html><html><head><meta charset="UTF-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; script-src 'nonce-test';">
+      response.end(`<!doctype html><html><head><meta charset="UTF-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src blob:; style-src 'self'; script-src 'nonce-test';">
         <link rel="stylesheet" href="/theme.css"><link rel="stylesheet" href="/similarity.css"></head><body>
         <div id="app" data-filename="sample.mssim"></div><script nonce="test">window.acquireVsCodeApi = () => ({ getState: () => null, setState: () => {}, postMessage: m => window.sendHostMessage(m) });</script>
         <script nonce="test" src="/similarity.js"></script></body></html>`);
@@ -154,6 +154,7 @@ async function browserTests() {
         savedImages.push(message);
         return;
       }
+      if (message.type === "webview-ready") return;   // for the host, which this test stands in for
       child.stdin.write(JSON.stringify({ ...message, type: message.type === "page-request" ? "page" : message.type }) + "\n");
     });
     await page.goto(`http://127.0.0.1:${server.address().port}`);
@@ -172,45 +173,78 @@ async function browserTests() {
     assert.ok((await page.locator(".table-scroll").innerText()).includes("<script>bad</script>"));
     await page.locator("#next").click();
     await page.waitForFunction(() => document.querySelector("footer").textContent.includes("Page 2 / 2"));
+    // The filter is a similarity range: here 0.8 <= similarity < 1.
     await page.locator("#filter").click();
-    await page.locator("#add-filter").click();
+    await page.locator("#range-min").fill("0.8"); await page.locator("#range-min").dispatchEvent("change");
+    await page.locator("#range-max").fill("1"); await page.locator("#range-max").dispatchEvent("change");
+    await page.locator("#range-max-operator").selectOption("<");
     await page.locator("#apply").click();
-    await page.waitForFunction(() => document.querySelector(".stats strong").textContent.startsWith("2"));
+    await page.waitForFunction(() => document.querySelector(".stats strong").textContent.startsWith("1"));
+    assert.equal(await page.locator("#filter").innerText(), "Filter (≥ 0.8, < 1)");
     assert.ok((await page.locator(".table-scroll").innerText()).includes("0.89"));
     await page.locator("#filter").click();
     await page.locator("#clear").click();
     await page.waitForFunction(() => document.querySelector(".stats strong").textContent.startsWith("3"));
+    // The key column identifies the pairs of this by-key result: index* and data_index* are hidden.
+    assert.deepEqual(await page.locator("[data-sort]").evaluateAll((b) => b.map((e) => e.dataset.sort)), ["SpecID", "similarity"]);
+    assert.match(await page.locator('[data-sort="SpecID"]').innerText(), /^a\.SpecID = b\.SpecID/);
     await page.locator("#bins").fill("2"); await page.locator("#bins").press("Tab");
-    await page.waitForFunction(() => document.querySelectorAll("[data-bin]").length === 2);
+    await page.waitForFunction(() => document.querySelectorAll(".frequency-table tbody tr").length === 2);
     await page.locator(".distribution summary").click();
     const counts = await page.locator(".frequency-table tbody tr td:nth-child(2)").allTextContents();
     assert.deepEqual(counts, ["1", "2"]);
     assert.equal(await page.locator(".stats div").count(), 8);
     assert.ok((await page.locator(".stats").innerText()).includes("Q1"));
     assert.ok((await page.locator(".stats").innerText()).includes("Q3"));
+    assert.equal(await page.locator("#chart svg rect[fill]").count(), 2);   // one bar per bin
+    // Clicking the chart does not filter.
+    await page.locator("#chart").click();
+    assert.equal(await page.locator("#filter").innerText(), "Filter");
+    assert.ok((await page.locator(".stats strong").first().innerText()).startsWith("3"));
+    await page.locator("#chart-type").selectOption("line");
+    assert.equal(await page.locator("#chart svg circle").count(), 2);
     await page.locator("#count-scale").selectOption("log");
     assert.ok((await page.locator("#chart-hint").innerText()).includes("log₁₀"));
+    assert.ok((await page.locator("#chart svg").innerHTML()).includes("Count (log₁₀ scale)"));
     await page.locator("#chart-type").selectOption("box");
     assert.ok((await page.locator(".distribution p").innerText()).includes("Q1"));
-    await page.locator("#save-chart").click();
+
+    // Save image: a preview of the chosen size, colors, axis ranges, and format.
+    await page.locator("#save-image").click();
+    await page.locator("#image-type").selectOption("histogram");
     await page.locator("#image-width").fill("640");
     await page.locator("#image-height").fill("480");
     await page.locator("#image-grid").uncheck();
-    await page.locator("#image-box-color").fill("#ff0000");
-    await page.locator("#confirm-chart").click();
-    await page.waitForFunction(() => document.querySelector("#confirm-chart")?.textContent.includes("Preparing"));
+    await page.locator("#image-color").fill("#ff0000");
+    await page.locator("#image-x-min").fill("0.5");
+    await page.locator("#image-y-max").fill("5");
+    const preview = await page.locator("#image-preview svg").evaluate((svg) => svg.outerHTML);
+    assert.match(preview, /width="640" height="480"/);
+    assert.match(preview, /fill="#ff0000"/);
+    assert.ok(!preview.includes('stroke-opacity="0.15"'));   // no grid
+    assert.match(await page.locator("#image-preview svg").innerHTML(), />0\.5</);
+    await page.locator("#image-x-max").fill("0.2");   // maximum below minimum
+    assert.match(await page.locator("#image-status").innerText(), /greater than/);
+    assert.equal(await page.locator("#confirm-image").isDisabled(), true);
+    await page.locator("#image-x-max").fill("");
+    await page.locator("#image-format").selectOption("svg");
+    await page.locator("#confirm-image").click();
+    await page.waitForFunction(() => document.querySelector("#confirm-image")?.textContent.includes("Preparing"));
     assert.equal(savedImages.length, 1);
-    assert.equal(savedImages[0].filename, "similarity-box.png");
-    assert.ok(savedImages[0].bytes.length > 1000);
+    assert.equal(savedImages[0].filename, "similarity-histogram.svg");
+    assert.match(Buffer.from(savedImages[0].bytes).toString("utf8"), /^<\?xml[^]*<svg[^]*width="640"/);
     await page.evaluate(() => window.dispatchEvent(new MessageEvent("message", {
-      data: { type: "image-save-complete", path: "/tmp/similarity-box.png" }
+      data: { type: "image-save-complete", path: "/tmp/similarity-histogram.svg" }
     })));
-    await page.waitForFunction(() => !document.querySelector("#chart-export"));
-    await page.locator("#chart-type").selectOption("histogram");
-    await page.locator(".distribution summary").click();
-    await page.locator('[data-bin="1"]').click();
-    await page.waitForFunction(() => document.querySelector(".stats strong").textContent.startsWith("2"));
-    assert.ok((await page.locator(".table-scroll").innerText()).includes("C")); // score 1 included
+    await page.waitForFunction(() => !document.querySelector("#image-dialog"));
+    await page.locator("#save-image").click();
+    await page.locator("#image-format").selectOption("png");
+    await page.locator("#confirm-image").click();
+    for (let i = 0; i < 50 && savedImages.length < 2; i++) await new Promise((r) => setTimeout(r, 50));
+    assert.equal(savedImages[1].filename, "similarity-box.png");
+    assert.deepEqual(savedImages[1].bytes.slice(1, 4), [80, 78, 71]);   // "PNG"
+    await page.evaluate(() => window.dispatchEvent(new MessageEvent("message", { data: { type: "image-save-cancelled" } })));
+    await page.locator("#cancel-image").click();
     await page.locator('[data-sort="similarity"]').click();
     await page.waitForSelector('[aria-sort="ascending"]');
     await page.waitForFunction(() => !document.querySelector("#reload").disabled);
