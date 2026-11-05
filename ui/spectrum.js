@@ -38,6 +38,8 @@
   const SIMILARITY_TOLERANCE_UNITS = ["Da", "ppm", "Da or ppm"];
   let similarityToleranceUnit = "Da or ppm";
   const comparisonTolerance = () => ({ da: similarityTolerance.Da, ppm: similarityTolerance.ppm, unit: similarityToleranceUnit });
+  // Intensities are raised to this power before scoring (0.5 = square root).
+  let similarityExponent = 1;
   let metadataOpen = false;
 
   const esc = (v) => String(v ?? "")
@@ -297,8 +299,10 @@
 
   const calculateSimilarity = () => {
     if (!comparison.top || !comparison.bottom) return null;
-    const upper = spectrumPeaks(comparison.top);
-    const lower = spectrumPeaks(comparison.bottom);
+    const weighted = (peaks) => similarityExponent === 1 ? peaks
+      : peaks.map((peak) => ({ ...peak, intensity: peak.intensity ** similarityExponent }));
+    const upper = weighted(spectrumPeaks(comparison.top));
+    const lower = weighted(spectrumPeaks(comparison.bottom));
     if (!upper.length || !lower.length) return { score: 0, matched: 0 };
     const similarityMethod = effectiveSimilarityMethod();
     const shifted = PRECURSOR_METHODS.includes(similarityMethod);
@@ -589,7 +593,7 @@
     renderSpectrum();
   }
 
-  // Default score method and tolerance from the host (comparison-settings).
+  // Default score method, tolerance, and intensity exponent from the host (comparison-settings).
   function applyComparisonSettings(settings) {
     if (["dot", "reverse", "modified", "bonanza"].includes(settings?.method)) similarityMethod = settings.method;
     if (typeof settings?.precursor_column === "string") precursorColumn = settings.precursor_column.trim();
@@ -598,6 +602,8 @@
       if (Number.isFinite(tolerance) && tolerance > 0) similarityTolerance[unit] = Math.min(SIMILARITY_TOLERANCE_MAXIMUM[unit], tolerance);
     }
     if (SIMILARITY_TOLERANCE_UNITS.includes(settings?.tolerance_unit)) similarityToleranceUnit = settings.tolerance_unit;
+    const exponent = Number(settings?.intensity_exponent);
+    if (Number.isFinite(exponent) && exponent > 0) similarityExponent = exponent;
     if (comparison.top) renderSpectrum(true);
   }
 
@@ -658,7 +664,7 @@
           <section class="plot-panel">
             <div class="comparison-slots">
               <div class="comparison-slot"><span class="slot-action-spacer" aria-hidden="true"></span><button id="pin-top" class="pin-button ${comparison.topPinned ? "pinned" : ""}" title="${comparison.topPinned ? "Unpin" : "Pin"} upper spectrum" aria-pressed="${comparison.topPinned}">📌</button><span><strong>Upper</strong> · ${esc(payload.datasetName || "Dataset")} · ${esc(title)}</span></div>
-              ${comparison.bottom ? `<div class="comparison-slot"><button id="remove-bottom" class="remove-spectrum" title="Remove lower spectrum" aria-label="Remove lower spectrum"><svg viewBox="0 0 16 16" aria-hidden="true"><path class="trash-outline" d="M3 4h10M6 4V2h4v2m2 0-.6 10H4.6L4 4m2.5 2v6m3-6v6"/><path class="trash-inner" d="M3 4h10M6 4V2h4v2m2 0-.6 10H4.6L4 4m2.5 2v6m3-6v6"/></svg></button><button id="pin-bottom" class="pin-button ${comparison.bottomPinned ? "pinned" : ""}" title="${comparison.bottomPinned ? "Unpin" : "Pin"} lower spectrum" aria-pressed="${comparison.bottomPinned}">📌</button><span><strong>Lower</strong> · ${esc(comparison.bottom.datasetName || "Dataset")} · ${esc(comparison.bottom.title || "Spectrum")}</span></div><div class="similarity-row"><label>Similarity <select id="similarity-method">${[["dot", "Dot product"], ["reverse", "Reverse dot product"], ["modified", "Modified dot product"], ["bonanza", "BONANZA"]].map(([method, label]) => `<option value="${method}" ${effectiveSimilarityMethod() === method ? "selected" : ""} ${PRECURSOR_METHODS.includes(method) && !precursorsAvailable() ? "disabled" : ""}>${label}</option>`).join("")}</select></label><label>Tolerance <select id="similarity-tolerance-unit" aria-label="Tolerance unit">${SIMILARITY_TOLERANCE_UNITS.map((unit) => `<option value="${unit}" ${similarityToleranceUnit === unit ? "selected" : ""}>${unit}</option>`).join("")}</select></label><span class="similarity-tolerance">${["Da", "ppm"].filter((unit) => similarityToleranceUnit.includes(unit)).map((unit) => `<label>±<input id="similarity-tolerance-${unit.toLowerCase()}" data-tolerance-unit="${unit}" type="number" min="0.000001" max="${SIMILARITY_TOLERANCE_MAXIMUM[unit]}" step="${unit === "ppm" ? 1 : 0.001}" value="${similarityTolerance[unit]}" aria-label="Tolerance in ${unit}"> ${unit}</label>`).join(" <span>or</span> ")}</span><output>${Number(similarity?.score || 0).toFixed(4)}</output><span>${similarity?.matched || 0} matched peaks</span>${precursorsAvailable() ? "" : `<span class="similarity-note" role="note">No precursor m/z in the ${[comparison.top, comparison.bottom].map(precursorMz).every((value) => value === null) ? "upper and lower spectra" : precursorMz(comparison.top) === null ? "upper spectrum" : "lower spectrum"} (${precursorColumn ? `column: ${esc(precursorColumn)}` : "column: auto-detected"}): Modified dot product and BONANZA are unavailable${PRECURSOR_METHODS.includes(similarityMethod) ? "; showing the dot product" : ""}.</span>`}</div>` : `<div class="comparison-hint">Pin the upper spectrum, then select another spectrum to compare.</div>`}
+              ${comparison.bottom ? `<div class="comparison-slot"><button id="remove-bottom" class="remove-spectrum" title="Remove lower spectrum" aria-label="Remove lower spectrum"><svg viewBox="0 0 16 16" aria-hidden="true"><path class="trash-outline" d="M3 4h10M6 4V2h4v2m2 0-.6 10H4.6L4 4m2.5 2v6m3-6v6"/><path class="trash-inner" d="M3 4h10M6 4V2h4v2m2 0-.6 10H4.6L4 4m2.5 2v6m3-6v6"/></svg></button><button id="pin-bottom" class="pin-button ${comparison.bottomPinned ? "pinned" : ""}" title="${comparison.bottomPinned ? "Unpin" : "Pin"} lower spectrum" aria-pressed="${comparison.bottomPinned}">📌</button><span><strong>Lower</strong> · ${esc(comparison.bottom.datasetName || "Dataset")} · ${esc(comparison.bottom.title || "Spectrum")}</span></div><div class="similarity-row"><label>Similarity <select id="similarity-method">${[["dot", "Dot product"], ["reverse", "Reverse dot product"], ["modified", "Modified dot product"], ["bonanza", "BONANZA"]].map(([method, label]) => `<option value="${method}" ${effectiveSimilarityMethod() === method ? "selected" : ""} ${PRECURSOR_METHODS.includes(method) && !precursorsAvailable() ? "disabled" : ""}>${label}</option>`).join("")}</select></label><label>Tolerance <select id="similarity-tolerance-unit" aria-label="Tolerance unit">${SIMILARITY_TOLERANCE_UNITS.map((unit) => `<option value="${unit}" ${similarityToleranceUnit === unit ? "selected" : ""}>${unit}</option>`).join("")}</select></label><span class="similarity-tolerance">${["Da", "ppm"].filter((unit) => similarityToleranceUnit.includes(unit)).map((unit) => `<label>±<input id="similarity-tolerance-${unit.toLowerCase()}" data-tolerance-unit="${unit}" type="number" min="0.000001" max="${SIMILARITY_TOLERANCE_MAXIMUM[unit]}" step="${unit === "ppm" ? 1 : 0.001}" value="${similarityTolerance[unit]}" aria-label="Tolerance in ${unit}"> ${unit}</label>`).join(" <span>or</span> ")}</span><label>Exponent <input id="similarity-exponent" type="number" min="0.01" step="0.1" value="${similarityExponent}" aria-label="Intensity exponent" title="Intensities are raised to this power before scoring (0.5 = square root)"></label><output>${Number(similarity?.score || 0).toFixed(4)}</output><span>${similarity?.matched || 0} matched peaks</span>${precursorsAvailable() ? "" : `<span class="similarity-note" role="note">No precursor m/z in the ${[comparison.top, comparison.bottom].map(precursorMz).every((value) => value === null) ? "upper and lower spectra" : precursorMz(comparison.top) === null ? "upper spectrum" : "lower spectrum"} (${precursorColumn ? `column: ${esc(precursorColumn)}` : "column: auto-detected"}): Modified dot product and BONANZA are unavailable${PRECURSOR_METHODS.includes(similarityMethod) ? "; showing the dot product" : ""}.</span>`}</div>` : `<div class="comparison-hint">Pin the upper spectrum, then select another spectrum to compare.</div>`}
             </div>
             <div id="plot-root"></div>
           </section>
@@ -764,6 +770,12 @@
       if (Number.isFinite(value) && value > 0) similarityTolerance[unit] = Math.min(SIMILARITY_TOLERANCE_MAXIMUM[unit], value);
       renderSpectrum();
     });
+    const exponent = document.getElementById("similarity-exponent");
+    if (exponent) exponent.onchange = () => {
+      const value = Number(exponent.value);
+      if (Number.isFinite(value) && value > 0) similarityExponent = value;
+      renderSpectrum();
+    };
     const toleranceUnit = document.getElementById("similarity-tolerance-unit");
     if (toleranceUnit) toleranceUnit.onchange = () => {
       if (SIMILARITY_TOLERANCE_UNITS.includes(toleranceUnit.value)) similarityToleranceUnit = toleranceUnit.value;

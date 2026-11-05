@@ -214,7 +214,7 @@
           "type": "number",
           "default": 1,
           "exclusiveMinimum": 0,
-          "description": "Default intensity exponent: intensities are raised to this power before scoring (0.5 = square root)."
+          "description": "Default intensity exponent: intensities are raised to this power before scoring (0.5 = square root). Also the initial exponent when two spectra are compared in the Mass Spectrum view."
         },
         "msentitySpectrumViewer.similarity.includeMatchedData": {
           "type": "boolean",

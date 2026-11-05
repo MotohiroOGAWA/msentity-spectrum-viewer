@@ -113,7 +113,9 @@ matching tolerance is editable in Da, in ppm (of the mean m/z of two peaks),
 or as **Da or ppm** (± ~ Da or ± ~ ppm; a peak matches within either). The
 defaults are **Da or ppm** with ±0.01 Da and ±10 ppm; switching the unit keeps both values (the
 initial method, unit, and tolerances are the
-`msentitySpectrumViewer.spectrumComparison` settings). Modified dot
+`msentitySpectrumViewer.spectrumComparison` settings). Intensities are raised
+to the editable **Exponent** before scoring (0.5 = square root; initially
+`msentitySpectrumViewer.similarity.intensityExponent`). Modified dot
 product and BONANZA also consider precursor-mass-shifted neutral-loss matches,
 so they need a precursor m/z on both spectra: it is read from the
 `msentitySpectrumViewer.spectrumComparison.precursorColumn` metadata column
@@ -299,7 +301,8 @@ discards assignments that have not been exported.
   `method` (`cosine`), `threshold` (`0.8`), `intensityExponent` (`1`),
   `includeMatchedData` (`true`), `threads` (`1`; at most the logical cores
   minus one, and also editable in the form). The m/z tolerance comes from the
-  `spectrumComparison.tolerance*` settings below.
+  `spectrumComparison.tolerance*` settings below; `intensityExponent` is also
+  the initial exponent when two spectra are compared.
 - `msentitySpectrumViewer.spectrumComparison.method` (`dot`, `reverse`,
   `modified`, `bonanza`), `toleranceUnit` (`Da or ppm`, `Da`, or `ppm`),
   `toleranceDa` (`0.01`), `tolerancePpm` (`10`), and `precursorColumn`

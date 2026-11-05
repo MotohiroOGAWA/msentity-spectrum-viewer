@@ -79,11 +79,14 @@ function configuredSimilaritySettings(host) {
 
 // Defaults of the score in the spectrum comparison view:
 // msentitySpectrumViewer.spectrumComparison.* over COMPARISON_DEFAULTS.
+// The intensity exponent comes from msentitySpectrumViewer.similarity.intensityExponent,
+// shared with the similarity wizard.
 function configuredComparisonSettings(host) {
   const config = vscode.workspace.getConfiguration("msentitySpectrumViewer.spectrumComparison");
   try {
     return host.comparisonSettings({ method: config.get("method"), tolerance_unit: config.get("toleranceUnit"),
       tolerance_da: config.get("toleranceDa"), tolerance_ppm: config.get("tolerancePpm"),
+      intensity_exponent: vscode.workspace.getConfiguration("msentitySpectrumViewer.similarity").get("intensityExponent"),
       precursor_column: config.get("precursorColumn") });
   } catch (error) {
     outputChannel?.appendLine(`[settings] ${error.message}; using the default comparison settings`);

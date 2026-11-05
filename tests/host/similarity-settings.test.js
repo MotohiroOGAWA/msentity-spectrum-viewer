@@ -42,6 +42,8 @@ test("VS Code setting defaults equal SIMILARITY_DEFAULTS", () => {
   assert.equal(formatMzTolerance({ da: COMPARISON_DEFAULTS.tolerance_da, ppm: COMPARISON_DEFAULTS.tolerance_ppm }),
     SIMILARITY_DEFAULTS.mz_tolerance);
   assert.equal(COMPARISON_DEFAULTS.tolerance_unit, "Da or ppm");
+  // The comparison view's intensity exponent is msentitySpectrumViewer.similarity.intensityExponent.
+  assert.equal(COMPARISON_DEFAULTS.intensity_exponent, SIMILARITY_DEFAULTS.intensity_exponent);
   for (const [name, setting] of Object.entries(settings)) {
     assert.equal(properties[`msentitySpectrumViewer.similarity.${setting}`]?.default, SIMILARITY_DEFAULTS[name], setting);
   }
@@ -64,7 +66,10 @@ test("m/z tolerance text", () => {
 test("spectrum comparison defaults", () => {
   assert.deepEqual(comparisonSettings(), COMPARISON_DEFAULTS);
   assert.deepEqual(comparisonSettings({ method: "bonanza", tolerance_da: 0.02 }),
-    { method: "bonanza", tolerance_unit: "Da or ppm", tolerance_da: 0.02, tolerance_ppm: 10, precursor_column: "" });
+    { method: "bonanza", tolerance_unit: "Da or ppm", tolerance_da: 0.02, tolerance_ppm: 10, intensity_exponent: 1, precursor_column: "" });
+  assert.equal(comparisonSettings({ intensity_exponent: 0.5 }).intensity_exponent, 0.5);
+  assert.throws(() => comparisonSettings({ intensity_exponent: 0 }), /intensity_exponent/);
+  assert.throws(() => comparisonSettings({ intensity_exponent: "1" }), /intensity_exponent/);
   assert.equal(comparisonSettings({ precursor_column: " PEPMASS " }).precursor_column, "PEPMASS");
   assert.equal(comparisonSettings({ precursor_column: "Auto" }).precursor_column, "Auto");   // a column named Auto
   assert.equal(comparisonSettings({ precursor_column: " " }).precursor_column, "");

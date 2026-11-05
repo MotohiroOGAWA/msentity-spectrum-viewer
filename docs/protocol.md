@@ -203,11 +203,12 @@ The panel has no backend of its own. The host sends it:
   `title`, `datasetId`, `datasetName`, `datasetPath` (the dataset viewer posts
   this payload as `open-spectrum`);
 * `{"type": "spectrum-comparison", "top": {...}, "bottom": {...}, "method": "cosine"}`;
-* `{"type": "comparison-settings", "method": "dot", "tolerance_unit": "Da or ppm", "tolerance_da": 0.01, "tolerance_ppm": 10, "precursor_column": ""}` —
+* `{"type": "comparison-settings", "method": "dot", "tolerance_unit": "Da or ppm", "tolerance_da": 0.01, "tolerance_ppm": 10, "intensity_exponent": 1, "precursor_column": ""}` —
   optional; the initial score method (`dot`, `reverse`, `modified`, `bonanza`),
   the tolerance unit (`Da`, `ppm`, or `Da or ppm`: within either), and the
   ± Da and ± ppm matching tolerances of a comparison (ppm of the mean m/z of
-  two peaks), and the metadata column of the precursor m/z (`""`, the default, detects the first
+  two peaks), the intensity exponent (intensities are raised to this power
+  before scoring, > 0), and the metadata column of the precursor m/z (`""`, the default, detects the first
   of `PrecursorMZ`, `precursor_mz`, `PEPMASS`, `ParentMZ`), which `modified` and
   `bonanza` need on both spectra. Send it before the spectra;
   `comparisonSettings()` of the host library gives validated values;
