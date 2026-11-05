@@ -48,12 +48,20 @@
       parameters.mz_tolerance_ppm > 0 ? `${number(parameters.mz_tolerance_ppm)} ppm` : "",
     ].filter(Boolean).join(" or ");
     const matching = tolerance ? ` · m/z ${tolerance}` : "";
+    // Metadata columns that paired the spectra of a by-key result: "SpecID = SourceSpecID".
+    // A name used on both sides is qualified as in SQL (a: first dataset, b: second).
+    const sharedKey = parameters.key1 && parameters.key1 === parameters.key2 ? parameters.key1 : null;
+    const keyMatch = sharedKey ? `a.${sharedKey} = b.${sharedKey}`
+      : parameters.key1 && parameters.key2 ? `${parameters.key1} = ${parameters.key2}` : "";
+    const sourceName = (side) => String(value?.metadata?.sources?.[side]?.path || "").split(/[\\/]/).pop()
+      || (side ? "second dataset" : "first dataset");
     const subtitle = mode === "library_search"
       ? `${method} library search · all query/reference pairs · threshold ${number(parameters.threshold)}${matching}`
-      : `${method} for unique metadata keys shared by both datasets${matching}`;
+      : `${method} for unique metadata keys shared by both datasets${keyMatch ? ` · ${keyMatch}` : ""}${matching}`;
+    const columnLabel = (column) => sharedKey && column === sharedKey ? keyMatch : column;
     app.innerHTML = `
       <header><div><span class="eyebrow">MSENTITY · SIMILARITY</span><h1>${esc(app.dataset.filename)}</h1>
-        <p>${esc(subtitle)}</p></div>
+        <p>${esc(subtitle)}</p>${sharedKey ? `<p class="key-sides">a: ${esc(sourceName(0))} (index1) · b: ${esc(sourceName(1))} (index2)</p>` : ""}</div>
         <nav aria-label="Result actions"><button id="filter" ${disabled}>Filter${filters.length ? ` (${filters.length})` : ""}</button>
         <button id="export" ${disabled || !value ? "disabled" : ""}>Export…</button>
         <button id="reload" ${disabled}>Reload</button></nav></header>
@@ -86,7 +94,7 @@
           <tbody>${value.histogram.counts.map((count, i) => `<tr><td>${rangeLabel(i)}</td><td>${number(count)}</td><td><button data-bin="${i}" ${disabled}>Show rows</button></td></tr>`).join("")}</tbody></table></div></details>
         </section>
         <section><div class="section-title"><h2>Comparison results</h2><span>Indices are zero-based input positions</span></div>
-        <div class="table-scroll"><table><thead><tr>${value.has_matched_data ? "<th>Match</th>" : ""}${value.columns.map((column) => `<th aria-sort="${sort?.column === column ? (sort.direction === "asc" ? "ascending" : "descending") : "none"}"><button data-sort="${esc(column)}" ${disabled}>${esc(column)} ${sort?.column === column ? (sort.direction === "asc" ? "↑" : "↓") : "↕"}</button></th>`).join("")}</tr></thead>
+        <div class="table-scroll"><table><thead><tr>${value.has_matched_data ? "<th>Match</th>" : ""}${value.columns.map((column) => `<th aria-sort="${sort?.column === column ? (sort.direction === "asc" ? "ascending" : "descending") : "none"}"><button data-sort="${esc(column)}" ${disabled}>${esc(columnLabel(column))} ${sort?.column === column ? (sort.direction === "asc" ? "↑" : "↓") : "↕"}</button></th>`).join("")}</tr></thead>
         <tbody>${value.rows.length ? value.rows.map((row, index) => `<tr>${value.has_matched_data ? `<td><button data-open-match="${Number(value.result_indices[index])}" ${disabled}>Open spectra</button></td>` : ""}${value.columns.map((column) => `<td>${column === "similarity" ? number(row[column]) : esc(typeof row[column] === "object" && row[column] !== null ? JSON.stringify(row[column]) : row[column])}</td>`).join("")}</tr>`).join("") : `<tr><td colspan="${value.columns.length + (value.has_matched_data ? 1 : 0)}" class="empty">No matching rows</td></tr>`}</tbody></table></div>
         <footer><button id="previous" ${busy || value.page === 0 ? "disabled" : ""}>Previous</button><span>Page ${value.page + 1} / ${value.total_pages}</span><button id="next" ${busy || value.page + 1 >= value.total_pages ? "disabled" : ""}>Next</button></footer></section>
         <details class="metadata"><summary>Calculation metadata</summary><p>Reload reads the saved result. Recalculate from the dataset viewer to use changed spectra.</p><pre>${esc(JSON.stringify(value.metadata, null, 2))}</pre></details>

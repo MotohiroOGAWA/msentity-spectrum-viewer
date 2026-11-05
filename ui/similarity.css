@@ -7,6 +7,7 @@ header, .section-title { justify-content: space-between; }
 h1 { font-size: 22px; font-weight: 600; margin: 6px 0; overflow-wrap: anywhere; }
 h2 { font-size: 15px; font-weight: 600; margin: 0 0 8px; }
 p, .hint { color: var(--vscode-descriptionForeground); line-height: 1.6; margin: 4px 0 12px; }
+header p:has(+ .key-sides) { margin-bottom: 0; }
 .eyebrow { color: var(--vscode-descriptionForeground); font-size: 10px; letter-spacing: 2px; }
 button, select, input { font: inherit; border-radius: 4px; padding: 6px 10px; border: 1px solid var(--vscode-input-border, var(--vscode-panel-border)); }
 button { cursor: pointer; color: var(--vscode-button-secondaryForeground); background: var(--vscode-button-secondaryBackground); }
