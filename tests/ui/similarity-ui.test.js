@@ -210,6 +210,11 @@ async function browserTests() {
     assert.ok((await page.locator(".distribution p").innerText()).includes("Q1"));
 
     // Save image: a preview of the chosen size, colors, axis ranges, and format.
+    // The dialog opens as a modal over the page; Escape closes it.
+    await page.locator("#save-image").click();
+    assert.equal(await page.locator("#image-dialog").evaluate((d) => d.matches(":modal")), true);
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => !document.querySelector("#image-dialog"));
     await page.locator("#save-image").click();
     await page.locator("#image-type").selectOption("histogram");
     await page.locator("#image-width").fill("640");

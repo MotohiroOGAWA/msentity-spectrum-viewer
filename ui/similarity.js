@@ -169,6 +169,7 @@
       drawChart();
     }
     if (exportOpen && value) bindImageDialog();
+    else document.body.classList.remove("modal-open");
   }
 
   function applyRange() {
@@ -307,7 +308,7 @@
 
   function imageDialog() {
     const countAxis = chartType !== "box";
-    return `<dialog id="image-dialog" class="chart-dialog" open><form method="dialog"><div class="dialog-title"><h2>Save distribution image</h2><button id="cancel-image" type="button" aria-label="Close">×</button></div>
+    return `<dialog id="image-dialog" class="chart-dialog"><form method="dialog"><div class="dialog-title"><h2>Save distribution image</h2><button id="cancel-image" type="button" aria-label="Close">×</button></div>
       <div class="export-options">
         <label>Plot <select id="image-type">${CHART_TYPES.map(([type, label]) => option(type, label, chartType === type)).join("")}</select></label>
         <label>Count scale <select id="image-scale" ${countAxis ? "" : "disabled"}>${option("linear", "Linear", countScale === "linear")}${option("log", "Log₁₀", countScale === "log")}</select></label>
@@ -378,6 +379,10 @@
       saveState(); render();
     });
     const close = () => { exportOpen = false; render(); };
+    // A modal over the page; Escape closes it like Cancel.
+    dialog.addEventListener("cancel", (event) => { event.preventDefault(); close(); });
+    dialog.showModal();
+    document.body.classList.add("modal-open");
     document.getElementById("cancel-image").addEventListener("click", close);
     document.getElementById("cancel-image-bottom").addEventListener("click", close);
     document.getElementById("confirm-image").addEventListener("click", saveImage);

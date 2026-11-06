@@ -28,6 +28,9 @@ section, .metadata { margin: 16px 0; padding: 18px; border: 1px solid var(--vsco
 #chart { width: 100%; height: 260px; overflow: hidden; cursor: crosshair; }
 #chart svg { display: block; }
 .chart-dialog { width: min(1100px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto; color: var(--vscode-foreground); background: var(--vscode-editor-background); border: 1px solid var(--vscode-panel-border); border-radius: 8px; }
+.chart-dialog { padding: 18px; box-shadow: 0 12px 40px rgba(0, 0, 0, .5); }
+.chart-dialog::backdrop { background: rgba(0, 0, 0, .55); }
+body.modal-open { overflow: hidden; }
 .chart-dialog form { display: grid; gap: 14px; }
 .chart-dialog input[type="number"] { width: 100px; }
 .dialog-title { display: flex; align-items: center; justify-content: space-between; }
