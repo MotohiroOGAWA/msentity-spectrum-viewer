@@ -89,12 +89,14 @@ function similaritySettings(overrides = {}) {
 
 // Defaults of the score shown when two spectra are compared in the spectrum
 // view (ui/spectrum.js, message comparison-settings). This score is computed in
-// the UI and matches peaks within a tolerance in Da or in ppm.
+// the UI and matches peaks within a tolerance in Da or in ppm; intensities are
+// raised to intensity_exponent first, as in the similarity calculation.
 const COMPARISON_DEFAULTS = Object.freeze({
   method: "dot",               // "dot", "reverse", "modified", or "bonanza"
   tolerance_unit: "Da or ppm", // initial unit: "Da", "ppm", or "Da or ppm" (within either tolerance)
   tolerance_da: 0.01,          // peaks match within ± this many Da, > 0 and <= 10
   tolerance_ppm: 10,           // peaks match within ± this many ppm of their mean m/z, > 0 and <= 1000
+  intensity_exponent: 1,       // intensities are raised to this power before scoring, > 0
   precursor_column: "",        // metadata column of the precursor m/z; "" tries PrecursorMZ, precursor_mz, PEPMASS, ParentMZ
 });
 
@@ -127,6 +129,10 @@ function comparisonSettings(overrides = {}) {
     if (typeof tolerance !== "number" || !Number.isFinite(tolerance) || tolerance <= 0 || tolerance > maximum) {
       throw new Error(`Comparison setting ${name} must be a number > 0 and <= ${maximum}, got ${JSON.stringify(tolerance)}`);
     }
+  }
+  const exponent = settings.intensity_exponent;
+  if (typeof exponent !== "number" || !Number.isFinite(exponent) || exponent <= 0) {
+    throw new Error(`Comparison setting intensity_exponent must be a number > 0, got ${JSON.stringify(exponent)}`);
   }
   return Object.freeze(settings);
 }

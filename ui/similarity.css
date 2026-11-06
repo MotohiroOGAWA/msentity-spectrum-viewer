@@ -7,6 +7,7 @@ header, .section-title { justify-content: space-between; }
 h1 { font-size: 22px; font-weight: 600; margin: 6px 0; overflow-wrap: anywhere; }
 h2 { font-size: 15px; font-weight: 600; margin: 0 0 8px; }
 p, .hint { color: var(--vscode-descriptionForeground); line-height: 1.6; margin: 4px 0 12px; }
+header p:has(+ .key-sides) { margin-bottom: 0; }
 .eyebrow { color: var(--vscode-descriptionForeground); font-size: 10px; letter-spacing: 2px; }
 button, select, input { font: inherit; border-radius: 4px; padding: 6px 10px; border: 1px solid var(--vscode-input-border, var(--vscode-panel-border)); }
 button { cursor: pointer; color: var(--vscode-button-secondaryForeground); background: var(--vscode-button-secondaryBackground); }
@@ -20,15 +21,24 @@ section, .metadata { margin: 16px 0; padding: 18px; border: 1px solid var(--vsco
 .stats span { display: block; color: var(--vscode-descriptionForeground); text-transform: capitalize; margin-bottom: 8px; }
 .stats strong { display: block; font-size: 22px; font-weight: 500; font-variant-numeric: tabular-nums; }
 .stats small { font-size: 12px; color: var(--vscode-descriptionForeground); }
-.filter-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
-.filter-row input { flex: 1; min-width: 100px; }
+.filter-range { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
+.filter-range input { width: 110px; }
 #bins { width: 78px; margin-left: 8px; }
 .chart-controls, .export-options { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
-#histogram { width: 100%; height: 260px; display: block; cursor: crosshair; }
+#chart { width: 100%; height: 260px; overflow: hidden; cursor: crosshair; }
+#chart svg { display: block; }
 .chart-dialog { width: min(1100px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto; color: var(--vscode-foreground); background: var(--vscode-editor-background); border: 1px solid var(--vscode-panel-border); border-radius: 8px; }
+.chart-dialog { padding: 18px; box-shadow: 0 12px 40px rgba(0, 0, 0, .5); }
+.chart-dialog::backdrop { background: rgba(0, 0, 0, .55); }
+body.modal-open { overflow: hidden; }
 .chart-dialog form { display: grid; gap: 14px; }
 .chart-dialog input[type="number"] { width: 100px; }
-#export-preview { display: block; width: 100%; max-height: 560px; object-fit: contain; border: 1px solid var(--vscode-panel-border); background: var(--vscode-editor-background); }
+.dialog-title { display: flex; align-items: center; justify-content: space-between; }
+.dialog-title h2 { margin: 0; }
+.axis-ranges input[type="number"] { width: 90px; }
+/* The image is transparent: the preview shows it on a checkerboard. */
+.image-preview { max-height: 560px; overflow: auto; border: 1px solid var(--vscode-panel-border); background-color: #fff; background-image: linear-gradient(45deg, #ddd 25%, transparent 25%), linear-gradient(-45deg, #ddd 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ddd 75%), linear-gradient(-45deg, transparent 75%, #ddd 75%); background-size: 20px 20px; background-position: 0 0, 0 10px, 10px -10px, -10px 0; }
+.image-preview svg { display: block; width: 100%; height: auto; }
 .hint { min-height: 22px; font-variant-numeric: tabular-nums; }
 summary { cursor: pointer; font-weight: 500; }
 .table-scroll, .frequency-table { overflow: auto; }

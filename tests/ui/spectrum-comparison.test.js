@@ -69,6 +69,23 @@ try { ({ chromium } = require('playwright')); } catch { chromium = null; }
     assert.equal(await matched(), 2);
     await page.locator('#similarity-method').selectOption('bonanza');
     assert.equal(await method(), 'bonanza');
+
+    // The intensity exponent: the host's default, then the input. Only m/z 100 matches;
+    // upper intensities (100, 100), lower (400, 100).
+    const score = async () => Number(await page.locator('.similarity-row output').innerText());
+    await page.locator('#similarity-method').selectOption('dot');
+    await send({ type: 'spectrum', payload: { ...spectrum('lower', [100, 200], {}), spectrum: { mz: [100, 200], intensity: [400, 100] } } });
+    assert.equal(await page.locator('#similarity-exponent').inputValue(), '1');
+    assert.equal(await score(), 0.686);   // 400 / (√2·100 · √170000)
+    await send({ type: 'comparison-settings', intensity_exponent: 0.5 });
+    assert.equal(await page.locator('#similarity-exponent').inputValue(), '0.5');
+    assert.equal(await score(), 0.6325);  // 200 / (√2·10 · √500)
+    await page.locator('#similarity-exponent').fill('1');
+    await page.locator('#similarity-exponent').dispatchEvent('change');
+    assert.equal(await score(), 0.686);
+    await page.locator('#similarity-exponent').fill('0');   // ignored: not positive
+    await page.locator('#similarity-exponent').dispatchEvent('change');
+    assert.equal(await page.locator('#similarity-exponent').inputValue(), '1');
     assert.deepEqual(errors, []);
     console.log('Spectrum comparison tests passed.');
   } finally {
