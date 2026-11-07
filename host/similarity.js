@@ -6,7 +6,8 @@
 // msentitySpectrumViewer.similarity.*.
 
 const SIMILARITY_DEFAULTS = Object.freeze({
-  method: "cosine",            // "cosine" or "reverse_cosine"
+  methods: Object.freeze(["cosine"]), // one or more of METHODS; one score column each
+  precursor_column: "",        // precursor m/z column (modified_cosine, bonanza); "" detects it
   threshold: 0.8,              // library search: lowest score kept, 0–1
   mz_tolerance: "0.01Da,10ppm", // peaks match within either term (see parseMzTolerance)
   intensity_exponent: 1,       // intensities are raised to this power (> 0)
@@ -14,7 +15,10 @@ const SIMILARITY_DEFAULTS = Object.freeze({
   threads: 1,                  // worker threads, an integer >= 1
 });
 
-const METHODS = ["cosine", "reverse_cosine"];
+// Score methods, in the order of result columns. modified_cosine and bonanza
+// need a precursor m/z (PRECURSOR_METHODS).
+const METHODS = Object.freeze(["cosine", "reverse_cosine", "modified_cosine", "bonanza"]);
+const PRECURSOR_METHODS = Object.freeze(["modified_cosine", "bonanza"]);
 
 const MZ_TOLERANCE_TERM = /^\s*([+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?)\s*(da|ppm)\s*$/i;
 
@@ -61,6 +65,11 @@ function formatMzTolerance({ da, ppm }) {
 function similaritySettings(overrides = {}) {
   const settings = { ...SIMILARITY_DEFAULTS };
   for (const [name, value] of Object.entries(overrides || {})) {
+    // "method": one method name (older hosts and settings).
+    if (name === "method") {
+      if (value !== undefined && value !== null) settings.methods = [value];
+      continue;
+    }
     if (!(name in SIMILARITY_DEFAULTS)) throw new Error(`Unknown similarity setting: ${name}`);
     if (value !== undefined && value !== null) settings[name] = value;
   }
@@ -70,9 +79,15 @@ function similaritySettings(overrides = {}) {
       throw new Error(`Similarity setting ${name} must be ${rule}, got ${JSON.stringify(value)}`);
     }
   };
-  if (!METHODS.includes(settings.method)) {
-    throw new Error(`Similarity setting method must be one of ${METHODS.join(", ")}, got ${JSON.stringify(settings.method)}`);
+  const methods = typeof settings.methods === "string" ? settings.methods.split(",").map((m) => m.trim()) : settings.methods;
+  if (!Array.isArray(methods) || !methods.length || methods.some((m) => !METHODS.includes(m))) {
+    throw new Error(`Similarity setting methods must be one or more of ${METHODS.join(", ")}, got ${JSON.stringify(settings.methods)}`);
   }
+  settings.methods = Object.freeze(METHODS.filter((m) => methods.includes(m)));
+  if (typeof settings.precursor_column !== "string") {
+    throw new Error(`Similarity setting precursor_column must be a column name, or empty to detect it, got ${JSON.stringify(settings.precursor_column)}`);
+  }
+  settings.precursor_column = settings.precursor_column.trim();
   number("threshold", (v) => v >= 0 && v <= 1, "a number from 0 to 1");
   try {
     settings.mz_tolerance = formatMzTolerance(parseMzTolerance(settings.mz_tolerance));
@@ -138,6 +153,6 @@ function comparisonSettings(overrides = {}) {
 }
 
 module.exports = {
-  SIMILARITY_DEFAULTS, similaritySettings, parseMzTolerance, formatMzTolerance,
+  SIMILARITY_DEFAULTS, SIMILARITY_METHODS: METHODS, PRECURSOR_METHODS, similaritySettings, parseMzTolerance, formatMzTolerance,
   COMPARISON_DEFAULTS, comparisonSettings,
 };

@@ -92,8 +92,12 @@
 
   // Calculate similarity form: opened by similarity-options (datasets and the
   // host's defaults); every choice is sent at once as similarity-submit.
-  const SIMILARITY_FORM_DEFAULTS = { method: "cosine", threshold: 0.8, mz_tolerance: "0.01Da,10ppm",
-    intensity_exponent: 1, include_matched_data: true };
+  const SIMILARITY_FORM_DEFAULTS = { methods: ["cosine"], precursor_column: "", threshold: 0.8,
+    mz_tolerance: "0.01Da,10ppm", intensity_exponent: 1, include_matched_data: true };
+  // Score methods (one result column each); the last two need a precursor m/z.
+  const SIMILARITY_METHODS = [["cosine", "Cosine"], ["reverse_cosine", "Reverse cosine"],
+    ["modified_cosine", "Modified cosine"], ["bonanza", "BONANZA"]];
+  const SIMILARITY_PRECURSOR_METHODS = ["modified_cosine", "bonanza"];
   const SIMILARITY_TOLERANCE_UNITS = ["Da or ppm", "Da", "ppm"];
   let similarityForm = null;
   const similarityDataset = id => similarityForm?.datasets.find(dataset => dataset.id === id);
@@ -122,7 +126,10 @@
     const threads = Number.isSafeInteger(defaults.threads) && defaults.threads >= 1 ? defaults.threads : 1;
     similarityForm = {
       datasets, mode: "library_search", dataset1: first?.id || "", dataset2: second?.id || "file", referencePath: "",
-      key1: defaultSimilarityKey(first), key2: defaultSimilarityKey(second), method: defaults.method,
+      key1: defaultSimilarityKey(first), key2: defaultSimilarityKey(second),
+      methods: SIMILARITY_METHODS.map(([m]) => m).filter(m =>
+        (Array.isArray(defaults.methods) ? defaults.methods : defaults.method ? [defaults.method] : ["cosine"]).includes(m)),
+      precursorColumn: typeof defaults.precursor_column === "string" ? defaults.precursor_column : "",
       threshold: String(defaults.threshold), toleranceUnit: tolerance.unit, toleranceDa: tolerance.da, tolerancePpm: tolerance.ppm,
       exponent: String(defaults.intensity_exponent), threads: String(Math.min(threads, maximumThreads)), maximumThreads,
       includeMatchedData: defaults.include_matched_data !== false,
@@ -150,6 +157,7 @@
     if (!libraryMode && !second) return form.datasets.length < 2 ? "Add a second dataset for metadata-key matching." : "Choose the second dataset.";
     if (second && second.id === first.id) return "Choose two different datasets.";
     if (!libraryMode && (!first.columns.includes(form.key1) || !second.columns.includes(form.key2))) return "Choose a key column for both datasets.";
+    if (!form.methods.length) return "Select at least one similarity method.";
     const threshold = Number(form.threshold);
     if (libraryMode && (!String(form.threshold).trim() || !Number.isFinite(threshold) || threshold < 0 || threshold > 1)) return "Score threshold must be a number from 0 to 1.";
     if (!similarityTolerance(form)) return `Enter a positive m/z tolerance in ${form.toleranceUnit === "Da or ppm" ? "Da and ppm" : form.toleranceUnit}.`;
@@ -176,8 +184,12 @@
       lines.push("Missing keys and keys found on only one side are skipped; non-missing keys must be unique.");
     }
     const tolerance = similarityTolerance(form);
-    lines.push(`${form.method === "reverse_cosine" ? "Reverse cosine" : "Cosine"} similarity · m/z ${tolerance ? esc(tolerance.replace("Da", " Da").replace("ppm", " ppm").replace(",", " or ")) : "—"} · intensity<sup>${esc(form.exponent)}</sup> · ${esc(form.threads)} thread${Number(form.threads) === 1 ? "" : "s"}`);
-    lines.push(`${form.mode === "library_search" ? `Saves pairs scoring ≥ ${esc(form.threshold)}` : "Saves the score of every matched pair"} ${form.includeMatchedData ? "with the matched spectra and metadata" : "as indices and scores only (lightweight)"}.`);
+    const methods = SIMILARITY_METHODS.filter(([m]) => form.methods.includes(m)).map(([, label]) => label);
+    lines.push(`${methods.length ? esc(methods.join(", ")) : "No method"} similarity · m/z ${tolerance ? esc(tolerance.replace("Da", " Da").replace("ppm", " ppm").replace(",", " or ")) : "—"} · intensity<sup>${esc(form.exponent)}</sup> · ${esc(form.threads)} thread${Number(form.threads) === 1 ? "" : "s"}`);
+    if (form.methods.some(m => SIMILARITY_PRECURSOR_METHODS.includes(m))) {
+      lines.push(`Precursor m/z from ${form.precursorColumn ? `<code>${esc(form.precursorColumn)}</code>` : "PrecursorMZ, precursor_mz, PEPMASS, or ParentMZ"}; pairs without one get an empty modified cosine / BONANZA.`);
+    }
+    lines.push(`${form.mode === "library_search" ? `Saves pairs where ${form.methods.length > 1 ? "any method scores" : "the score is"} ≥ ${esc(form.threshold)}` : "Saves the scores of every matched pair"} ${form.includeMatchedData ? "with the matched spectra and metadata" : "as indices and scores only (lightweight)"}.`);
     lines.push("Uses all spectra of the selected datasets, including unsaved edits; table filters do not apply.");
     return lines.map(line => `<p>${line}</p>`).join("");
   }
@@ -204,7 +216,8 @@
           : `<label for="similarity-dataset2">Second dataset</label>${datasetSelect("similarity-dataset2", form.dataset2, others)}
              <label for="similarity-key1">Key (first)</label>${keySelect("similarity-key1", first, form.key1)}
              <label for="similarity-key2">Key (second)</label>${keySelect("similarity-key2", second, form.key2)}`}
-        <label for="similarity-method">Method</label><select id="similarity-method">${option("cosine", "Cosine similarity", form.method === "cosine")}${option("reverse_cosine", "Reverse cosine similarity", form.method === "reverse_cosine")}</select>
+        <span>Methods</span><div class="similarity-methods" role="group" aria-label="Similarity methods">${SIMILARITY_METHODS.map(([m, label]) => `<label class="similarity-check"><input type="checkbox" id="similarity-method-${m}" data-similarity-method="${m}" ${form.methods.includes(m) ? "checked" : ""}> ${esc(label)}</label>`).join("")}</div>
+        ${form.methods.some(m => SIMILARITY_PRECURSOR_METHODS.includes(m)) ? `<label for="similarity-precursor">Precursor m/z</label><select id="similarity-precursor">${option("", "Detect (PrecursorMZ, PEPMASS, …)", !form.precursorColumn)}${[...new Set([...(first?.columns || []), ...(second?.columns || [])])].map(c => option(c, c, c === form.precursorColumn)).join("")}</select>` : ""}
         ${libraryMode ? `<label for="similarity-threshold">Score threshold</label><input id="similarity-threshold" data-similarity-field="threshold" type="number" min="0" max="1" step="0.05" value="${esc(form.threshold)}">` : ""}
         <label for="similarity-tolerance-unit">m/z tolerance</label><div class="similarity-tolerance"><select id="similarity-tolerance-unit" aria-label="m/z tolerance unit">${SIMILARITY_TOLERANCE_UNITS.map(unit => option(unit, unit, form.toleranceUnit === unit)).join("")}</select>${[["Da", "toleranceDa", 0.001], ["ppm", "tolerancePpm", 1]].filter(([unit]) => form.toleranceUnit.includes(unit)).map(([unit, field, step]) => `<span>±</span><input id="similarity-tolerance-${unit.toLowerCase()}" data-similarity-field="${field}" type="number" min="0" step="${step}" value="${esc(form[field])}" aria-label="m/z tolerance in ${unit}"> ${unit}`).join(" <span>or</span> ")}</div>
         <label for="similarity-exponent">Intensity exponent</label><input id="similarity-exponent" data-similarity-field="exponent" type="number" min="0" step="0.1" value="${esc(form.exponent)}">
@@ -810,7 +823,14 @@
       rerender(event.target.id);
     });
     document.getElementById("similarity-browse")?.addEventListener("click", () => { chooseReference(); rerender("similarity-browse"); });
-    for (const [id, field] of [["similarity-key1", "key1"], ["similarity-key2", "key2"], ["similarity-method", "method"]]) {
+    document.querySelectorAll("[data-similarity-method]").forEach(input => input.addEventListener("change", () => {
+      const chosen = new Set(form.methods);
+      if (input.checked) chosen.add(input.dataset.similarityMethod); else chosen.delete(input.dataset.similarityMethod);
+      form.methods = SIMILARITY_METHODS.map(([m]) => m).filter(m => chosen.has(m));
+      rerender(input.id);
+    }));
+    document.getElementById("similarity-precursor")?.addEventListener("change", event => { form.precursorColumn = event.target.value; refresh(); });
+    for (const [id, field] of [["similarity-key1", "key1"], ["similarity-key2", "key2"]]) {
       document.getElementById(id)?.addEventListener("change", event => { form[field] = event.target.value; refresh(); });
     }
     document.querySelectorAll("[data-similarity-field]").forEach(input => input.addEventListener("input", () => {
@@ -829,7 +849,8 @@
         type: "similarity-submit", mode: form.mode, dataset1: form.dataset1,
         dataset2: file ? undefined : form.dataset2, reference_path: file ? form.referencePath : undefined,
         parameters: {
-          method: form.method, mz_tolerance: similarityTolerance(form), intensity_exponent: Number(form.exponent),
+          methods: form.methods, precursor_column: form.precursorColumn,
+          mz_tolerance: similarityTolerance(form), intensity_exponent: Number(form.exponent),
           include_matched_data: form.includeMatchedData, threads: Number(form.threads),
           ...(libraryMode ? { threshold: Number(form.threshold) } : { key1: form.key1, key2: form.key2 }),
         },

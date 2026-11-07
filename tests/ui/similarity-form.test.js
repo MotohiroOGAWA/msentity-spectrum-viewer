@@ -28,7 +28,7 @@ try { ({ chromium } = require('playwright')); } catch { chromium = null; }
     await page.locator('#similarity-button').click();
     assert.equal((await last()).type, 'calculate-similarity');
     const datasets = [
-      { id: 'query', name: 'query.msp', columns: ['Name', 'SpecID'], total_rows: 120 },
+      { id: 'query', name: 'query.msp', columns: ['Name', 'SpecID', 'PEPMASS'], total_rows: 120 },
       { id: 'library', name: 'library.msp', columns: ['InChIKey', 'Name'], total_rows: 5000 },
     ];
     await send({ type: 'similarity-options', active_dataset_id: 'query', datasets, max_threads: 3,
@@ -63,7 +63,18 @@ try { ({ chromium } = require('playwright')); } catch { chromium = null; }
     assert.match(await problem(), /Threads must be an integer from 1 to 3/);
     await page.locator('#similarity-threads').fill('2');
     assert.match(await preview(), /· 2 threads/);
-    await page.locator('#similarity-method').selectOption('reverse_cosine');
+    // Methods: one or more (one score column each); the precursor methods add a precursor choice.
+    assert.equal(await page.locator('#similarity-method-cosine').isChecked(), true);
+    assert.equal(await page.locator('#similarity-precursor').count(), 0);
+    await page.locator('#similarity-method-cosine').uncheck();
+    assert.match(await problem(), /at least one similarity method/);
+    await page.locator('#similarity-method-reverse_cosine').check();
+    await page.locator('#similarity-method-bonanza').check();
+    assert.equal(await page.locator('#similarity-precursor').inputValue(), '');
+    assert.match(await preview(), /Reverse cosine, BONANZA similarity/);
+    assert.match(await preview(), /PrecursorMZ, precursor_mz, PEPMASS, or ParentMZ/);
+    assert.match(await preview(), /any method scores ≥ 0\.6/);
+    await page.locator('#similarity-precursor').selectOption('PEPMASS');
     await page.locator('#similarity-include').uncheck();
     assert.match(await preview(), /Reverse cosine.*\n?.*scores only/s);
     await page.screenshot({ path: path.join(os.tmpdir(), 'msentity-similarity-form.png') });
@@ -75,7 +86,8 @@ try { ({ chromium } = require('playwright')); } catch { chromium = null; }
     assert.match(await preview(), /every spectrum in massbank\.msp/);
     await page.locator('#submit-similarity-form').click();
     assert.deepEqual(JSON.parse(JSON.stringify(await last())), { type: 'similarity-submit', mode: 'library_search', dataset1: 'query',
-      reference_path: '/data/ref/massbank.msp', parameters: { method: 'reverse_cosine', mz_tolerance: '10ppm',
+      reference_path: '/data/ref/massbank.msp', parameters: { methods: ['reverse_cosine', 'bonanza'],
+        precursor_column: 'PEPMASS', mz_tolerance: '10ppm',
         intensity_exponent: 1, include_matched_data: false, threads: 2, threshold: 0.6 } });
     assert.equal(await page.locator('#submit-similarity-form').isDisabled(), true);
 

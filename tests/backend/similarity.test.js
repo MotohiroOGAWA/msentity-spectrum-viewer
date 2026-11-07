@@ -81,7 +81,7 @@ test("key matching, result filters, histogram, and export", { skip }, () => {
     assert.match(failures[2], /must not overwrite an input/);
     assert.match(failures[3], /Unknown similarity parameter: bogus/);
 
-    const filters = [{ column: "similarity", operator: ">=", value: "0.8" }];
+    const filters = [{ column: "cosine", operator: ">=", value: "0.8" }];
     const subset = tmp.file("subset.mssim");
     const tsv = tmp.file("subset.tsv");
     const parquet = tmp.file("subset.parquet");
@@ -90,10 +90,10 @@ test("key matching, result filters, histogram, and export", { skip }, () => {
       { type: "page", page: 1, bins: 2 },
       { type: "page", filters, bins: 2 },
       ...[subset, tsv, parquet].map((path) => ({ type: "export", filters, path })),
-      { type: "reload", sort: { column: "similarity", direction: "asc" } },
+      { type: "reload", sort: { column: "cosine", direction: "asc" } },
       { type: "page", filters: [{ column: "SpecID", operator: "text_eq", value: "none" }] },
       { type: "page", bins: 0 },
-      { type: "page", filters: [{ column: "similarity", operator: ">", value: "bad" }] },
+      { type: "page", filters: [{ column: "cosine", operator: ">", value: "bad" }] },
       { type: "page" },
     ]);
     const pages = ofType(viewer, "similarity-page").map((m) => m.value);
@@ -101,7 +101,7 @@ test("key matching, result filters, histogram, and export", { skip }, () => {
     assert.ok(Math.abs(pages[0].statistics.q1 - 0.2236068) < 1e-6);
     assert.ok(Math.abs(pages[0].statistics.q3 - 0.6708204) < 1e-6);
     assert.equal(pages[0].rows[0].SpecID, "a");
-    assert.ok(Math.abs(pages[0].rows[0].similarity - 2 / Math.sqrt(5)) < 1e-6);
+    assert.ok(Math.abs(pages[0].rows[0].cosine - 2 / Math.sqrt(5)) < 1e-6);
     assert.equal(pages[1].rows[0].SpecID, "b");
     assert.deepEqual(pages[2].histogram.counts, [0, 1]);
     assert.equal(pages[3].rows[0].SpecID, "b");               // reload, ascending
@@ -116,8 +116,36 @@ test("key matching, result filters, histogram, and export", { skip }, () => {
     assert.deepEqual(exportedPage.rows.map((r) => r.SpecID), ["a"]);
     assert.deepEqual(exportedPage.metadata.export_view.filters, filters);
     assert.equal(exportedPage.metadata.export_view.source_rows, 2);
-    assert.match(fs.readFileSync(tsv, "utf8"), /^SpecID\tOtherID\tindex1\tindex2\tsimilarity\na\ta\t0\t1\t/);
+    assert.match(fs.readFileSync(tsv, "utf8"),
+      /^SpecID\tOtherID\tindex1\tindex2\tcosine\tintensity_coverage1\tintensity_coverage2\na\ta\t0\t1\t/);
     assert.equal(fs.readFileSync(parquet).subarray(0, 4).toString(), "PAR1");
+
+    // Intensity coverage (exponent 0.5: the matched share of the summed
+    // intensity) against similarity. a: coverage 4/5 and cosine 2/√5 = √(4/5),
+    // on the bound; b: nothing matches.
+    const coverage = resultPage(output, [
+      { type: "coverage", side: 1, x_bins: 2, y_bins: 2, max_points: 1, request_id: [3, "key"] },
+      { type: "coverage", side: 2, filters },
+      { type: "coverage", side: 3 },
+      { type: "coverage", x_range: [1, 0] },
+    ]);
+    const plots = ofType(coverage, "similarity-coverage").map((m) => m.value);
+    assert.equal(plots.length, 2);
+    assert.deepEqual(plots[0].request_id, [3, "key"]);
+    assert.deepEqual(plots[0].counts, [1, 0, 0, 1]);           // rows from the bottom
+    assert.equal(plots[0].total_rows, 2);
+    assert.equal(plots[0].above_bound_rows, 0);
+    assert.equal(plots[0].sampled, true);
+    assert.equal(plots[0].points.x.length, 1);
+    assert.equal(plots[0].intensity_exponent, 0.5);
+    assert.equal(plots[0].marginals.x.grid.length, plots[0].marginals.x.density.length);
+    assert.equal(plots[1].column, "intensity_coverage2");
+    assert.deepEqual([plots[1].x_bins, plots[1].y_bins, plots[1].total_rows], [20, 20, 1]);
+    assert.deepEqual(plots[1].points, { x: [1], y: [plots[1].points.y[0]] });
+    assert.ok(Math.abs(plots[1].points.y[0] - 2 / Math.sqrt(5)) < 1e-6);
+    const coverageErrors = ofType(coverage, "error").map((m) => m.message);
+    assert.match(coverageErrors[0], /side must be 1 or 2/);
+    assert.match(coverageErrors[1], /greater than the minimum/);
   } finally {
     tmp.cleanup();
   }
@@ -132,7 +160,7 @@ test("sorted export keeps the view order and embedded spectra", { skip }, () => 
       dataset1: query, reference_path: query, path: output, parameters: { threshold: 0 } }]);
     const sorted = tmp.file("sorted.mssim");
     const viewer = resultPage(output, [{ type: "export", path: sorted,
-      sort: { column: "similarity", direction: "asc" },
+      sort: { column: "cosine", direction: "asc" },
       filters: [{ column: "index1", operator: "numeric_eq", value: "0" }] }]);
     assert.equal(ofType(viewer, "export-complete")[0].total_rows, 2);
     const back = resultPage(sorted, [{ type: "page" }, { type: "page", page: 1 }, { type: "match", row: 0 }]);
@@ -161,6 +189,54 @@ test("histogram includes 1.0 and the viewer does not need the sources", { skip }
   }
 });
 
+test("several methods: one score column each, chosen per request", { skip }, () => {
+  const tmp = tempDir();
+  try {
+    // a: 100, 150 (precursor 200) vs 100, 160 (precursor 210): the precursor
+    // shift pairs 150 with 160 (cosine 0.5, modified cosine and BONANZA 1).
+    // b: no precursor m/z in the second dataset: those two cells are empty.
+    const first = tmp.file("first.tsv", "SpecID\tPrecursorMZ\tPeak\na\t200\t100,1;150,1\nb\t300\t100,1\n");
+    const second = tmp.file("second.tsv", "SpecID\tPrecursorMZ\tPeak\na\t210\t100,1;160,1\nb\t\t100,1\n");
+    const output = tmp.file("methods.mssim");
+    const messages = runBackend("dataset", first, [{ type: "add-dataset", path: second },
+      { type: "calculate-similarity", dataset1: first, dataset2: second, path: output,
+        parameters: { methods: ["bonanza", "cosine", "modified_cosine"], include_matched_data: true } }]);
+    assert.deepEqual(ofType(messages, "similarity-error"), []);
+    const viewer = resultPage(output, [
+      { type: "page", bins: 2 },
+      { type: "page", bins: 2, score: "bonanza" },
+      { type: "page", score: "reverse_cosine" },
+      { type: "coverage", score: "modified_cosine", x_bins: 1, y_bins: 2 },
+      { type: "coverage", score: "bonanza", side: 2 },
+      { type: "match", row: 0, score: "bonanza" },
+    ]);
+    const pages = ofType(viewer, "similarity-page").map((m) => m.value);
+    assert.deepEqual(pages[0].score_columns, ["cosine", "modified_cosine", "bonanza"]);
+    assert.deepEqual(pages[0].columns.slice(1, 6), ["index1", "index2", "cosine", "modified_cosine", "bonanza"]);
+    assert.equal(pages[0].score, "cosine");
+    assert.deepEqual(pages[0].metadata.parameters.methods, ["cosine", "modified_cosine", "bonanza"]);
+    assert.equal(pages[0].rows[0].cosine, 0.5);
+    assert.equal(pages[0].rows[0].modified_cosine, 1);
+    assert.deepEqual(pages[0].histogram.counts, [0, 2]);      // cosine 0.5 and 1
+    assert.equal(pages[1].score, "bonanza");
+    assert.equal(pages[1].scored_rows, 1);                    // b has no BONANZA score
+    assert.deepEqual(pages[1].histogram.counts, [0, 1]);
+    assert.equal(pages[1].statistics.mean, 1);
+    assert.deepEqual(pages[1].histograms, { cosine: [0, 2], modified_cosine: [0, 1], bonanza: [0, 1] });
+    assert.deepEqual([pages[1].statistics_by_score.bonanza.count, pages[1].statistics_by_score.cosine.count], [1, 2]);
+    assert.match(ofType(viewer, "error")[0].message, /Not a score column of this result: reverse_cosine/);
+    const plot = ofType(viewer, "similarity-coverage")[0].value;
+    assert.equal(plot.score, "modified_cosine");
+    assert.equal(plot.column, "modified_intensity_coverage1");   // its own pairing's coverage
+    assert.equal(ofType(viewer, "similarity-coverage")[1].value.column, "modified_intensity_coverage2");   // BONANZA: same pairing
+    assert.equal(plot.plotted_rows, 1);
+    assert.equal(ofType(viewer, "similarity-match")[0].method, "bonanza");
+    assert.equal(ofType(resultPage(output, [{ type: "page", page: 1 }]), "similarity-page")[0].value.rows[0].bonanza, null);
+  } finally {
+    tmp.cleanup();
+  }
+});
+
 test("peaks match within the m/z tolerance in Da or ppm", { skip }, () => {
   const tmp = tempDir();
   try {
@@ -177,7 +253,7 @@ test("peaks match within the m/z tolerance in Da or ppm", { skip }, () => {
       const failure = ofType(messages, "similarity-error")[0];
       if (failure) return failure.message;
       const page = ofType(resultPage(output, [{ type: "page" }]), "similarity-page")[0].value;
-      return { score: page.rows[0].similarity, parameters: page.metadata.parameters };
+      return { score: page.rows[0].cosine, parameters: page.metadata.parameters };
     };
     assert.equal(calculate({ mz_tolerance: "0.001Da" }).score, 0);
     const either = calculate({ mz_tolerance: "50 PPM, 0.001da" });

@@ -20,7 +20,7 @@ inside the extension, so nothing else needs to be installed.
 <!-- rdkit:end -->
 - Multiple datasets in one viewer; drag and drop files to add them
 - Mirrored two-spectrum comparison with dot product, reverse dot product, modified dot product, and BONANZA scores
-- Library search and key matching saved as `.mssim`, with a dedicated result viewer (histogram, box plot, statistics, filters)
+- Library search and key matching saved as `.mssim`, with a dedicated result viewer (histogram, box plot, coverage–similarity density/scatter plot, statistics, filters)
 - Peak table copy/save as TSV or CSV; drag-to-zoom; PNG/SVG export and clipboard copy
 - VS Code light, dark, and high-contrast theme support
 
@@ -123,6 +123,17 @@ so they need a precursor m/z on both spectra: it is read from the
 `ParentMZ` with a positive number; names are case-insensitive). When either
 spectrum has none, both methods are disabled and the dot product is shown.
 The score and matched-peak count update when the method, tolerance, or unit changes.
+The score line is always shown; click it to open or fold the settings: the
+method on the first line, the tolerance on the next, then the exponent (the
+choice stays open across spectra).
+
+The spectrum, the peak table, and the folded **Metadata** fill the panel.
+Drag the bar between the spectrum and the peak table (or focus it and use the
+arrow keys; double-click resets) to give either more room; the split is
+remembered for single spectra and comparisons separately. In a narrow panel the
+table moves below the spectrum and the bar resizes their heights. When **Metadata**
+is open, the bar above it resizes its height the same way (the size is
+remembered).
 The metadata area below the plot shows separate **Upper Metadata** and **Lower
 Metadata** panels during comparison, using the columns from each spectrum's
 source dataset.
@@ -162,8 +173,8 @@ should remain in an editor pane beside the dataset table.
 ## Calculate similarity and run a library search
 
 Click **Calculate similarity** in **More ...** to open one form with every
-choice: **Library search** or **Match by metadata key**, the datasets, the
-method, and the parameters. A preview below the form summarizes the
+choice: **Library search** or **Match by metadata key**, the datasets, one or
+more methods, and the parameters. A preview below the form summarizes the
 calculation — the datasets and their spectrum counts, the number of pairs, the
 score rule, and what is saved — and updates as you edit; a problem with the
 choices is shown there and disables **Calculate and save…**, which then asks
@@ -172,7 +183,13 @@ where to save the result as **`.mssim`**.
 A library search compares every spectrum in the query dataset with every
 spectrum in a reference library. The reference can be an entry already loaded
 with **Add dataset…**, or an MSDS, MSP, MGF, TSV, or CSV file chosen with
-**File…** / **Browse…** for that calculation. Choose cosine or reverse cosine,
+**File…** / **Browse…** for that calculation. Choose one or more methods —
+cosine, reverse cosine, modified cosine, BONANZA; the result has one score
+column per method, and a library search keeps a pair when any method reaches
+the threshold. Modified cosine and BONANZA also match peaks shifted by the
+precursor m/z difference and need the precursor m/z of both spectra (a
+**Precursor m/z** column, or detected from PrecursorMZ, precursor_mz, PEPMASS,
+ParentMZ); pairs without one get an empty cell for those two methods. Choose
 the score threshold (default `0.8`), the m/z tolerance unit — **Da or ppm**
 (default; a peak matches within either), **Da**, or **ppm** (of the mean m/z
 of two peaks) — with its values (default ±0.01 Da and ±10 ppm), and the
@@ -206,8 +223,29 @@ The `.mssim` file opens in a dedicated **Similarity Viewer**:
 - The histogram and count/mean/Q1/median/Q3/min/max summarize all filtered rows,
   not just the current page. Choose 1–200 bins; click a bar or use the accessible
   frequency table to filter a similarity range. The final bin includes 1.0.
-- Switch between a histogram and a box plot. Histogram counts support linear and
-  log10 scales.
+- Switch between a histogram, a line, and a box plot. Histogram counts support
+  linear and log10 scales. With several methods, **All methods** draws the
+  frequency of every score column as colored lines over the same bins, with a
+  table of each method's statistics.
+- **Score** chooses the score column (one per calculated method) used by the
+  filter, statistics, distribution, and coverage plot, and the initial method
+  of **Open spectra**.
+- **View → Coverage vs similarity** plots each row's intensity coverage (the
+  share of Σ intensity^(2α) carried by directly matched peaks, α = the
+  intensity exponent; with α = 0.5 the share of the summed intensity) against
+  the chosen score. For cosine, for reverse cosine against the reference's
+  coverage, and for modified cosine against the coverage of its own pairing
+  (direct and precursor-shifted peaks; results calculated with modified cosine
+  have it), the bound max = √coverage is drawn as a dotted line, which
+  **√coverage line** hides. BONANZA is plotted against the same coverage of
+  its pairing, but has no such bound. Choose
+  whose coverage is on the x axis (first/query or second/reference).
+  **Density** counts rows per cell (20 columns by default; leave Y bins blank
+  for square cells; linear or log10 color) and scales to any number of rows;
+  **Scatter** draws one point per row (a random sample of 20,000 for larger
+  results). **Marginal densities** adds the coverage density above the plot and
+  the similarity density to its right. Results calculated before coverage was
+  added have no coverage columns; recalculate them to use this view.
 - **Save PNG…** opens an image preview where width, height, grid visibility,
   histogram color, box color, and count scale can be changed before saving.
 - **Export…**: save the filtered/sorted results as `.mssim`, TSV, CSV, or Parquet.
@@ -298,7 +336,8 @@ discards assignments that have not been exported.
   `structurePreviewWidth`, `structurePreviewHeight`: structure previews.
 <!-- rdkit:end -->
 - `msentitySpectrumViewer.similarity.*`: defaults of **Calculate similarity…** —
-  `method` (`cosine`), `threshold` (`0.8`), `intensityExponent` (`1`),
+  `methods` (`["cosine"]`; any of `cosine`, `reverse_cosine`,
+  `modified_cosine`, `bonanza`), `threshold` (`0.8`), `intensityExponent` (`1`),
   `includeMatchedData` (`true`), `threads` (`1`; at most the logical cores
   minus one, and also editable in the form). The m/z tolerance comes from the
   `spectrumComparison.tolerance*` settings below; `intensityExponent` is also
@@ -308,7 +347,8 @@ discards assignments that have not been exported.
   `toleranceDa` (`0.01`), `tolerancePpm` (`10`), and `precursorColumn`
   (empty to detect automatically, or the metadata column of the precursor m/z): initial score settings when two spectra
   are compared. `toleranceUnit`, `toleranceDa`, and `tolerancePpm` are also
-  the initial m/z tolerance of **Calculate similarity**.
+  the initial m/z tolerance of **Calculate similarity**, and `precursorColumn`
+  its precursor m/z column for modified cosine and BONANZA.
 - `msentitySpectrumViewer.backendPath`: use another `msentity-viewer-backend`
   executable (development builds).
 

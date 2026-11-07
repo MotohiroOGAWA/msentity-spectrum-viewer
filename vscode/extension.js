@@ -61,13 +61,15 @@ function configuredLoadOptions() {
 function configuredSimilaritySettings(host) {
   const config = vscode.workspace.getConfiguration("msentitySpectrumViewer.similarity");
   const names = {
-    method: "method", threshold: "threshold",
+    methods: "methods", threshold: "threshold",
     intensity_exponent: "intensityExponent",
     include_matched_data: "includeMatchedData", threads: "threads",
   };
   const overrides = {};
   for (const [name, setting] of Object.entries(names)) overrides[name] = config.get(setting);
   const tolerance = configuredMzTolerance(host);
+  overrides.precursor_column = vscode.workspace.getConfiguration("msentitySpectrumViewer.spectrumComparison")
+    .get("precursorColumn", "");
   overrides.mz_tolerance = host.formatMzTolerance({
     da: tolerance.unit.includes("Da") ? tolerance.da : 0, ppm: tolerance.unit.includes("ppm") ? tolerance.ppm : 0 });
   try {
@@ -318,11 +320,17 @@ class MSEntityViewerProvider {
           writeRequest({ type: "page", page: 0, dataset_id: message.datasetId,
             ...configuredStructureOptions() });
           break;
+        case "coverage-request":
+          // Similarity result: intensity coverage plot data (answer similarity-coverage).
+          writeRequest({ type: "coverage", filters: message.filters, side: message.side, score: message.score,
+            x_bins: message.x_bins, y_bins: message.y_bins, x_range: message.x_range,
+            y_range: message.y_range, max_points: message.max_points, request_id: message.request_id });
+          break;
         case "page-request":
           writeRequest({
             type: "page", page: Number(message.page) || 0, dataset_id: message.datasetId,
             filters: message.filters, sort: message.sort, columns: message.columns, bins: message.bins,
-            ...configuredStructureOptions()
+            score: message.score, ...configuredStructureOptions()
           });
           break;
         case "render-structure":
@@ -437,7 +445,7 @@ class MSEntityViewerProvider {
           break;
         case "reload":
           writeRequest({ type: "reload", dataset_id: message.datasetId, filters: message.filters,
-            sort: message.sort, bins: message.bins,
+            sort: message.sort, bins: message.bins, score: message.score,
             page_size: isSimilarity ? undefined : configuredPageSize(),
             load_options: datasetLoadOptions.get(message.datasetId) || configuredLoadOptions(),
             ...configuredStructureOptions() });
@@ -486,7 +494,7 @@ class MSEntityViewerProvider {
           break;
         }
         case "open-similarity-match":
-          writeRequest({ type: "match", row: Number(message.resultIndex) });
+          writeRequest({ type: "match", row: Number(message.resultIndex), score: message.score });
           break;
         case "drop-datasets": {
           try {
@@ -633,7 +641,9 @@ class MSEntityViewerProvider {
 
     const chosen = form.parameters || {};
     const settings = host.similaritySettings({
-      method: chosen.method, threshold: chosen.threshold, mz_tolerance: chosen.mz_tolerance,
+      methods: chosen.methods ?? (chosen.method ? [chosen.method] : undefined),
+      precursor_column: chosen.precursor_column ?? defaults.precursor_column,
+      threshold: chosen.threshold, mz_tolerance: chosen.mz_tolerance,
       intensity_exponent: chosen.intensity_exponent, include_matched_data: chosen.include_matched_data,
       threads: chosen.threads ?? defaults.threads
     });
@@ -642,7 +652,8 @@ class MSEntityViewerProvider {
       throw new Error(`Use at most ${maximumThreads} threads; one logical core is kept free.`);
     }
     const parameters = {
-      method: settings.method, threads: settings.threads, mz_tolerance: settings.mz_tolerance,
+      methods: [...settings.methods], precursor_column: settings.precursor_column,
+      threads: settings.threads, mz_tolerance: settings.mz_tolerance,
       intensity_exponent: settings.intensity_exponent, include_matched_data: settings.include_matched_data
     };
     if (mode === "library_search") {

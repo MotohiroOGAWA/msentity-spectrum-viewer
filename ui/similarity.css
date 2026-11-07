@@ -55,3 +55,6 @@ footer { justify-content: flex-end; padding-top: 14px; }
 .error { border-left: 3px solid var(--vscode-errorForeground); padding: 12px; white-space: pre-wrap; color: var(--vscode-errorForeground); }
 .empty { text-align: center; padding: 30px; }
 @media (max-width: 700px) { #app { padding: 16px; } .stats { grid-template-columns: repeat(2, 1fr); } .stats div:first-child { grid-column: 1 / -1; } }
+.method-statistics { overflow: auto; margin: 4px 0 10px; }
+.method-statistics td:first-child { white-space: nowrap; }
+.swatch { width: 10px; height: 10px; margin-right: 6px; vertical-align: baseline; }
