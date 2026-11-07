@@ -140,6 +140,7 @@ button:disabled { cursor: default; opacity: .5; }
 .similarity-threads span { color: var(--muted); font-size: 12px; }
 .similarity-tolerance span { color: var(--muted); }
 .similarity-check { display: flex; align-items: center; gap: 6px; }
+.similarity-methods { display: flex; flex-wrap: wrap; gap: 6px 16px; }
 .similarity-hint { margin: 10px 0 0; }
 .similarity-preview { margin-top: 12px; padding: 8px 12px; border-left: 3px solid var(--vscode-focusBorder, var(--accent)); border-radius: 4px; background: var(--panel-alt); }
 .similarity-preview p { margin: 4px 0; }

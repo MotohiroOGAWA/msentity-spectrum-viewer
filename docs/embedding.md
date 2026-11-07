@@ -70,18 +70,21 @@ any part can be used on its own:
 |---|---|---|---|
 | Dataset table | `ui/viewer.js`, `ui/viewer.css` | `<div id="app" data-filename="…">` | paged metadata table, filters, editing, dataset list |
 | Spectrum | `ui/spectrum.js`, `ui/spectrum.css` | `<div id="spectrum-app">` | one spectrum or a mirrored comparison, peak table, image export |
-| Similarity result | `ui/similarity.js`, `ui/similarity.css` | `<div id="app" data-filename="…">` | result table, histogram/box plot, statistics |
+| Similarity result | `ui/similarity.js`, `ui/similarity.css` | `<div id="app" data-filename="…">` | result table, histogram/box plot, coverage–similarity plot, statistics |
 
 Messages to a component are `message` events on `window`; messages from it go
 to `acquireVsCodeApi().postMessage` inside a VS Code webview and to
 `window.msentityViewerHost.postMessage` anywhere else. The messages are listed
 in [protocol.md](protocol.md).
 
-Example: the spectrum component in a plain page, without any backend:
+Example: the spectrum component in a plain page, without any backend. The
+component fills its parent element (spectrum, peak table, and folded metadata
+share its height; at least 420 px; bars between them resize the parts), so give the parent a height. Below 760 px
+of width it stacks the peak table under the spectrum.
 
 ```html
 <link rel="stylesheet" href="ui/spectrum.css">
-<div id="spectrum-app"></div>
+<div style="height: 600px"><div id="spectrum-app"></div></div>
 <script>
   // Messages from the component (image export, peak copy, ...).
   window.msentityViewerHost = { postMessage: (message) => console.log(message) };

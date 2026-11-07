@@ -583,8 +583,17 @@ class DatasetBackend {
     std::string key1 = "SpecID";
     std::string key2 = "SpecID";
     for (const auto& [name, value] : parameters.items()) {
-      if (name == "method") {
-        options.method = sim::parse_method(json_text(value));
+      if (name == "methods" || name == "method") {
+        // ["cosine", "bonanza"], or names joined by commas ("method": one name, older hosts).
+        if (value.is_array()) {
+          options.methods.clear();
+          for (const auto& item : value) options.methods.push_back(sim::parse_method(json_text(item)));
+          if (options.methods.empty()) throw std::invalid_argument("Select at least one similarity method");
+        } else {
+          options.methods = sim::parse_methods(json_text(value));
+        }
+      } else if (name == "precursor_column") {
+        options.precursor_column = json_text(value);
       } else if (name == "threshold") {
         threshold = value.get<double>();
       } else if (name == "mz_tolerance") {

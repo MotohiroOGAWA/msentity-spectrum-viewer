@@ -33,6 +33,14 @@ try { ({ chromium } = require('playwright')); } catch { chromium = null; }
     await upper({ pepmass: '500.0 1200' });   // detected: any case, first token
     await page.locator('#pin-top').click();
     await lower({ PrecursorMZ: '450' });
+    // The score is always shown; the settings are folded until opened, and stay
+    // open across spectra. The tolerance is on the line after the method.
+    assert.equal(await page.locator('#similarity-settings').getAttribute('open'), null);
+    assert.equal(await page.locator('#similarity-settings > summary output').innerText(), '0.5000');   // dot product: 100 only
+    assert.equal(await page.locator('#similarity-method').isVisible(), false);
+    await page.locator('#similarity-settings > summary').click();
+    assert.deepEqual(await page.locator('.similarity-line').evaluateAll(lines => lines.map(line => line.querySelector('select, input')?.id)),
+      ['similarity-method', 'similarity-tolerance-unit', 'similarity-exponent']);
     assert.equal(await page.locator('#similarity-tolerance-unit').inputValue(), 'Da or ppm');
     assert.deepEqual(await disabled(), []);
     await page.locator('#similarity-method').selectOption('modified');

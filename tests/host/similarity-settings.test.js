@@ -14,7 +14,13 @@ test("defaults, overrides, and validation", () => {
   assert.equal(SIMILARITY_DEFAULTS.mz_tolerance, "0.01Da,10ppm");
   const ppm = similaritySettings({ mz_tolerance: " 10 PPM ", method: "reverse_cosine", threads: undefined });
   assert.equal(ppm.mz_tolerance, "10ppm");   // canonical text
-  assert.equal(ppm.method, "reverse_cosine");
+  assert.deepEqual(ppm.methods, ["reverse_cosine"]);   // "method": one name (older hosts)
+  // Several methods, in the order of result columns, without duplicates.
+  assert.deepEqual(similaritySettings({ methods: ["bonanza", "cosine", "bonanza"] }).methods, ["cosine", "bonanza"]);
+  assert.deepEqual(similaritySettings({ methods: "modified_cosine, cosine" }).methods, ["cosine", "modified_cosine"]);
+  assert.throws(() => similaritySettings({ methods: [] }), /methods/);
+  assert.equal(similaritySettings({ precursor_column: " PEPMASS " }).precursor_column, "PEPMASS");
+  assert.throws(() => similaritySettings({ precursor_column: 1 }), /precursor_column/);
   assert.equal(ppm.threads, 1);
   assert.throws(() => similaritySettings({ threads: 0 }), /threads must be an integer >= 1/);
   assert.equal(similaritySettings({ mz_tolerance: "10ppm,0.01da" }).mz_tolerance, "0.01Da,10ppm");
@@ -24,7 +30,7 @@ test("defaults, overrides, and validation", () => {
   assert.throws(() => similaritySettings({ threshold: 1.5 }), /threshold/);
   assert.throws(() => similaritySettings({ intensity_exponent: 0 }), /intensity_exponent/);
   assert.throws(() => similaritySettings({ threads: 1.5 }), /threads/);
-  assert.throws(() => similaritySettings({ method: "dot" }), /method/);
+  assert.throws(() => similaritySettings({ method: "dot" }), /methods/);
   assert.throws(() => similaritySettings({ include_matched_data: "yes" }), /include_matched_data/);
 });
 
@@ -32,12 +38,15 @@ test("VS Code setting defaults equal SIMILARITY_DEFAULTS", () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, "../../vscode/package.json"), "utf8"));
   const properties = manifest.contributes.configuration.properties;
   const settings = {
-    method: "method", threshold: "threshold",
+    methods: "methods", threshold: "threshold",
     intensity_exponent: "intensityExponent",
     include_matched_data: "includeMatchedData", threads: "threads",
   };
-  // The m/z tolerance is msentitySpectrumViewer.spectrumComparison.tolerance*, shared with the comparison view.
-  assert.deepEqual(Object.keys(settings).sort(), Object.keys(SIMILARITY_DEFAULTS).filter((name) => name !== "mz_tolerance").sort());
+  // The m/z tolerance and the precursor column are msentitySpectrumViewer.spectrumComparison.*,
+  // shared with the comparison view.
+  assert.deepEqual(Object.keys(settings).sort(),
+    Object.keys(SIMILARITY_DEFAULTS).filter((name) => !["mz_tolerance", "precursor_column"].includes(name)).sort());
+  assert.equal(COMPARISON_DEFAULTS.precursor_column, SIMILARITY_DEFAULTS.precursor_column);
   assert.equal(properties["msentitySpectrumViewer.similarity.mzTolerance"], undefined);
   assert.equal(formatMzTolerance({ da: COMPARISON_DEFAULTS.tolerance_da, ppm: COMPARISON_DEFAULTS.tolerance_ppm }),
     SIMILARITY_DEFAULTS.mz_tolerance);
@@ -45,7 +54,7 @@ test("VS Code setting defaults equal SIMILARITY_DEFAULTS", () => {
   // The comparison view's intensity exponent is msentitySpectrumViewer.similarity.intensityExponent.
   assert.equal(COMPARISON_DEFAULTS.intensity_exponent, SIMILARITY_DEFAULTS.intensity_exponent);
   for (const [name, setting] of Object.entries(settings)) {
-    assert.equal(properties[`msentitySpectrumViewer.similarity.${setting}`]?.default, SIMILARITY_DEFAULTS[name], setting);
+    assert.deepEqual(properties[`msentitySpectrumViewer.similarity.${setting}`]?.default, SIMILARITY_DEFAULTS[name], setting);
   }
 });
 

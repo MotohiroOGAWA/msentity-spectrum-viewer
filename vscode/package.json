@@ -190,18 +190,29 @@
           "default": "",
           "description": "Optional path for the MSP/MGF error log. No log is written when the error log level is 'none'."
         },
-        "msentitySpectrumViewer.similarity.method": {
-          "type": "string",
-          "enum": [
-            "cosine",
-            "reverse_cosine"
+        "msentitySpectrumViewer.similarity.methods": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "cosine",
+              "reverse_cosine",
+              "modified_cosine",
+              "bonanza"
+            ],
+            "enumDescriptions": [
+              "Normalize all peaks in both spectra",
+              "Ignore unmatched query peaks in the query norm",
+              "Also match peaks shifted by the precursor m/z difference (needs a precursor m/z)",
+              "Sum-normalized shared intensity over shared plus unmatched intensity, with precursor-shifted matches (needs a precursor m/z)"
+            ]
+          },
+          "uniqueItems": true,
+          "minItems": 1,
+          "default": [
+            "cosine"
           ],
-          "enumDescriptions": [
-            "Normalize all peaks in both spectra",
-            "Ignore unmatched query peaks in the query norm"
-          ],
-          "default": "cosine",
-          "description": "Default method of Calculate Similarity."
+          "description": "Default methods of Calculate Similarity; the result has one score column per method. The precursor m/z of modified_cosine and bonanza is read from msentitySpectrumViewer.spectrumComparison.precursorColumn (or detected)."
         },
         "msentitySpectrumViewer.similarity.threshold": {
           "type": "number",

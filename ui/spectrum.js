@@ -5,6 +5,7 @@
   const app = document.getElementById("spectrum-app");
   let state = null;
   let exportPlot = null;
+  let plotResize = null;   // ResizeObserver of the plot on screen
   const exportDefaults = { gridLines: false, mzTickLabels: false, intensityTickLabels: false,
     peakLabels: false, width: 900, height: 540, upperColor: "#2563eb", lowerColor: "#dc2626",
     mzMin: "", mzMax: "", intensityMin: "", intensityMax: "", lowerMin: "", lowerMax: "",
@@ -41,6 +42,19 @@
   // Intensities are raised to this power before scoring (0.5 = square root).
   let similarityExponent = 1;
   let metadataOpen = false;
+  // The similarity settings (method, tolerance, exponent) under the always-shown score.
+  let similaritySettingsOpen = Boolean(vscode.getState()?.similaritySettingsOpen);
+  // Share of the workspace taken by the peak table (width side by side, height
+  // when stacked), per layout; changed by dragging the splitter.
+  const PEAKS_SHARE_DEFAULTS = { single: 0.26, compared: 0.4 };
+  const peaksShare = { ...PEAKS_SHARE_DEFAULTS, ...vscode.getState()?.peaksShare };
+  const clampShare = (value) => Math.min(0.8, Math.max(0.12, value));
+  // Share of the component's height taken by the open metadata; changed by
+  // dragging the splitter above it.
+  const METADATA_SHARE_DEFAULT = 0.35;
+  let metadataShare = Number(vscode.getState()?.metadataShare) || METADATA_SHARE_DEFAULT;
+  const rememberLayout = () => vscode.setState({ ...vscode.getState(), peaksShare: { ...peaksShare },
+    metadataShare, similaritySettingsOpen });
 
   const esc = (v) => String(v ?? "")
     .replaceAll("&", "&amp;")
@@ -612,9 +626,119 @@
     comparison.bottom = bottom;
     comparison.topPinned = false;
     comparison.bottomPinned = false;
-    similarityMethod = method === "reverse_cosine" ? "reverse" : "dot";
+    // The score column the result viewer showed, as the comparison's method.
+    similarityMethod = { reverse_cosine: "reverse", modified_cosine: "modified", bonanza: "bonanza" }[method] || "dot";
     renderSpectrum();
   }
+
+  // The score of the compared spectra, always shown, and its settings in a
+  // collapsible block: the method on the first line, the tolerance on the next,
+  // then the intensity exponent.
+  function similarityMarkup(similarity) {
+    const methods = [["dot", "Dot product"], ["reverse", "Reverse dot product"], ["modified", "Modified dot product"], ["bonanza", "BONANZA"]];
+    const shown = effectiveSimilarityMethod();
+    const label = methods.find(([method]) => method === shown)?.[1] || "Dot product";
+    const note = precursorsAvailable() ? "" : `<span class="similarity-note" role="note">No precursor m/z in the ${[comparison.top, comparison.bottom].map(precursorMz).every((value) => value === null) ? "upper and lower spectra" : precursorMz(comparison.top) === null ? "upper spectrum" : "lower spectrum"} (${precursorColumn ? `column: ${esc(precursorColumn)}` : "column: auto-detected"}): Modified dot product and BONANZA are unavailable${PRECURSOR_METHODS.includes(similarityMethod) ? "; showing the dot product" : ""}.</span>`;
+    return `<details id="similarity-settings" class="similarity-row" ${similaritySettingsOpen ? "open" : ""}>
+      <summary title="Show or hide the similarity settings"><span class="similarity-label">${esc(label)}</span><output>${Number(similarity?.score || 0).toFixed(4)}</output><span>${similarity?.matched || 0} matched peaks</span></summary>
+      <div class="similarity-settings">
+        <div class="similarity-line"><label>Similarity <select id="similarity-method">${methods.map(([method, text]) => `<option value="${method}" ${shown === method ? "selected" : ""} ${PRECURSOR_METHODS.includes(method) && !precursorsAvailable() ? "disabled" : ""}>${text}</option>`).join("")}</select></label></div>
+        <div class="similarity-line"><label>Tolerance <select id="similarity-tolerance-unit" aria-label="Tolerance unit">${SIMILARITY_TOLERANCE_UNITS.map((unit) => `<option value="${unit}" ${similarityToleranceUnit === unit ? "selected" : ""}>${unit}</option>`).join("")}</select></label><span class="similarity-tolerance">${["Da", "ppm"].filter((unit) => similarityToleranceUnit.includes(unit)).map((unit) => `<label>±<input id="similarity-tolerance-${unit.toLowerCase()}" data-tolerance-unit="${unit}" type="number" min="0.000001" max="${SIMILARITY_TOLERANCE_MAXIMUM[unit]}" step="${unit === "ppm" ? 1 : 0.001}" value="${similarityTolerance[unit]}" aria-label="Tolerance in ${unit}"> ${unit}</label>`).join(" <span>or</span> ")}</span></div>
+        <div class="similarity-line"><label>Exponent <input id="similarity-exponent" type="number" min="0.01" step="0.1" value="${similarityExponent}" aria-label="Intensity exponent" title="Intensities are raised to this power before scoring (0.5 = square root)"></label></div>
+      </div>
+    </details>${note}`;
+  }
+
+  // The splitter between the spectrum and the peak table: drag it, or use the
+  // arrow keys (Home/End: smallest/largest table). Side by side it moves
+  // horizontally, stacked (narrow) vertically.
+  function bindSplitter() {
+    const splitter = document.getElementById("workspace-splitter");
+    const workspace = splitter?.parentElement;
+    if (!splitter || !workspace) return;
+    const layout = workspace.classList.contains("compared") ? "compared" : "single";
+    // Set through the CSSOM: the webview's CSP blocks style attributes.
+    workspace.style.setProperty("--peaks-share", String(peaksShare[layout]));
+    const set = (share) => {
+      peaksShare[layout] = clampShare(share);
+      workspace.style.setProperty("--peaks-share", String(peaksShare[layout]));
+      splitter.setAttribute("aria-valuenow", String(Math.round(peaksShare[layout] * 100)));
+    };
+    const stacked = () => Boolean(app.classList?.contains("narrow"));
+    splitter.setAttribute("aria-orientation", stacked() ? "horizontal" : "vertical");
+    splitter.onpointerdown = (event) => {
+      event.preventDefault();
+      splitter.setPointerCapture(event.pointerId);
+      splitter.classList.add("dragging");
+      const box = workspace.getBoundingClientRect();
+      splitter.onpointermove = (move) => set(stacked()
+        ? (box.bottom - move.clientY) / box.height
+        : (box.right - move.clientX) / box.width);
+      splitter.onpointerup = splitter.onpointercancel = () => {
+        splitter.onpointermove = splitter.onpointerup = splitter.onpointercancel = null;
+        splitter.classList.remove("dragging");
+        rememberLayout();
+      };
+    };
+    splitter.onkeydown = (event) => {
+      const grow = stacked() ? "ArrowUp" : "ArrowLeft", shrink = stacked() ? "ArrowDown" : "ArrowRight";
+      const step = { [grow]: 0.02, [shrink]: -0.02 }[event.key];
+      if (step !== undefined) set(peaksShare[layout] + step);
+      else if (event.key === "Home") set(0);
+      else if (event.key === "End") set(1);
+      else return;
+      event.preventDefault();
+      rememberLayout();
+    };
+    splitter.ondblclick = () => { set(PEAKS_SHARE_DEFAULTS[layout]); rememberLayout(); };
+  }
+
+  // The splitter above the open metadata: drag it, or use the arrow keys
+  // (Home/End: smallest/largest); double-click resets.
+  function bindMetadataSplitter() {
+    const splitter = document.getElementById("metadata-splitter");
+    const viewer = splitter?.parentElement;
+    if (!splitter || !viewer) return;
+    const set = (share) => {
+      metadataShare = Math.min(0.8, Math.max(0.1, share));
+      viewer.style.setProperty("--metadata-share", String(metadataShare));
+      splitter.setAttribute("aria-valuenow", String(Math.round(metadataShare * 100)));
+    };
+    set(metadataShare);
+    splitter.onpointerdown = (event) => {
+      event.preventDefault();
+      splitter.setPointerCapture(event.pointerId);
+      splitter.classList.add("dragging");
+      const box = viewer.getBoundingClientRect();
+      splitter.onpointermove = (move) => set((box.bottom - move.clientY) / box.height);
+      splitter.onpointerup = splitter.onpointercancel = () => {
+        splitter.onpointermove = splitter.onpointerup = splitter.onpointercancel = null;
+        splitter.classList.remove("dragging");
+        rememberLayout();
+      };
+    };
+    splitter.onkeydown = (event) => {
+      const step = { ArrowUp: 0.02, ArrowDown: -0.02 }[event.key];
+      if (step !== undefined) set(metadataShare + step);
+      else if (event.key === "Home") set(0);
+      else if (event.key === "End") set(1);
+      else return;
+      event.preventDefault();
+      rememberLayout();
+    };
+    splitter.ondblclick = () => { set(METADATA_SHARE_DEFAULT); rememberLayout(); };
+  }
+
+  // Narrow (stacked) layout by the width of the component's own box, so an
+  // embedded viewer adapts to its container rather than to the window.
+  const narrowObserver = typeof ResizeObserver === "function" && new ResizeObserver(() => {
+    const narrow = app.clientWidth < 760;
+    if (narrow !== app.classList.contains("narrow")) {
+      app.classList.toggle("narrow", narrow);
+      document.getElementById("workspace-splitter")?.setAttribute("aria-orientation", narrow ? "horizontal" : "vertical");
+    }
+  });
+  if (narrowObserver) narrowObserver.observe(app);
 
   function renderSpectrum(preserveState = false) {
     const payload = comparison.top;
@@ -650,9 +774,9 @@
     const metadata = comparison.bottom
       ? `<div class="metadata-panels compared">${metadataPanel(payload, "Upper Metadata")}${metadataPanel(comparison.bottom, "Lower Metadata")}</div>`
       : `<div class="metadata-panels">${metadataPanel(payload)}</div>`;
-    app.className = "";
+    if (app.classList) app.classList.remove("spectrum-status"); else app.className = "";
     app.innerHTML = `
-      <main class="spectrum-viewer">
+      <main class="spectrum-viewer ${metadataOpen ? "metadata-open" : ""}">
         <header class="spectrum-header">
           <div>
             <div class="eyebrow">MSENTITY · SPECTRUM ${globalIndex + 1}</div>
@@ -664,10 +788,11 @@
           <section class="plot-panel">
             <div class="comparison-slots">
               <div class="comparison-slot"><span class="slot-action-spacer" aria-hidden="true"></span><button id="pin-top" class="pin-button ${comparison.topPinned ? "pinned" : ""}" title="${comparison.topPinned ? "Unpin" : "Pin"} upper spectrum" aria-pressed="${comparison.topPinned}">📌</button><span><strong>Upper</strong> · ${esc(payload.datasetName || "Dataset")} · ${esc(title)}</span></div>
-              ${comparison.bottom ? `<div class="comparison-slot"><button id="remove-bottom" class="remove-spectrum" title="Remove lower spectrum" aria-label="Remove lower spectrum"><svg viewBox="0 0 16 16" aria-hidden="true"><path class="trash-outline" d="M3 4h10M6 4V2h4v2m2 0-.6 10H4.6L4 4m2.5 2v6m3-6v6"/><path class="trash-inner" d="M3 4h10M6 4V2h4v2m2 0-.6 10H4.6L4 4m2.5 2v6m3-6v6"/></svg></button><button id="pin-bottom" class="pin-button ${comparison.bottomPinned ? "pinned" : ""}" title="${comparison.bottomPinned ? "Unpin" : "Pin"} lower spectrum" aria-pressed="${comparison.bottomPinned}">📌</button><span><strong>Lower</strong> · ${esc(comparison.bottom.datasetName || "Dataset")} · ${esc(comparison.bottom.title || "Spectrum")}</span></div><div class="similarity-row"><label>Similarity <select id="similarity-method">${[["dot", "Dot product"], ["reverse", "Reverse dot product"], ["modified", "Modified dot product"], ["bonanza", "BONANZA"]].map(([method, label]) => `<option value="${method}" ${effectiveSimilarityMethod() === method ? "selected" : ""} ${PRECURSOR_METHODS.includes(method) && !precursorsAvailable() ? "disabled" : ""}>${label}</option>`).join("")}</select></label><label>Tolerance <select id="similarity-tolerance-unit" aria-label="Tolerance unit">${SIMILARITY_TOLERANCE_UNITS.map((unit) => `<option value="${unit}" ${similarityToleranceUnit === unit ? "selected" : ""}>${unit}</option>`).join("")}</select></label><span class="similarity-tolerance">${["Da", "ppm"].filter((unit) => similarityToleranceUnit.includes(unit)).map((unit) => `<label>±<input id="similarity-tolerance-${unit.toLowerCase()}" data-tolerance-unit="${unit}" type="number" min="0.000001" max="${SIMILARITY_TOLERANCE_MAXIMUM[unit]}" step="${unit === "ppm" ? 1 : 0.001}" value="${similarityTolerance[unit]}" aria-label="Tolerance in ${unit}"> ${unit}</label>`).join(" <span>or</span> ")}</span><label>Exponent <input id="similarity-exponent" type="number" min="0.01" step="0.1" value="${similarityExponent}" aria-label="Intensity exponent" title="Intensities are raised to this power before scoring (0.5 = square root)"></label><output>${Number(similarity?.score || 0).toFixed(4)}</output><span>${similarity?.matched || 0} matched peaks</span>${precursorsAvailable() ? "" : `<span class="similarity-note" role="note">No precursor m/z in the ${[comparison.top, comparison.bottom].map(precursorMz).every((value) => value === null) ? "upper and lower spectra" : precursorMz(comparison.top) === null ? "upper spectrum" : "lower spectrum"} (${precursorColumn ? `column: ${esc(precursorColumn)}` : "column: auto-detected"}): Modified dot product and BONANZA are unavailable${PRECURSOR_METHODS.includes(similarityMethod) ? "; showing the dot product" : ""}.</span>`}</div>` : `<div class="comparison-hint">Pin the upper spectrum, then select another spectrum to compare.</div>`}
+              ${comparison.bottom ? `<div class="comparison-slot"><button id="remove-bottom" class="remove-spectrum" title="Remove lower spectrum" aria-label="Remove lower spectrum"><svg viewBox="0 0 16 16" aria-hidden="true"><path class="trash-outline" d="M3 4h10M6 4V2h4v2m2 0-.6 10H4.6L4 4m2.5 2v6m3-6v6"/><path class="trash-inner" d="M3 4h10M6 4V2h4v2m2 0-.6 10H4.6L4 4m2.5 2v6m3-6v6"/></svg></button><button id="pin-bottom" class="pin-button ${comparison.bottomPinned ? "pinned" : ""}" title="${comparison.bottomPinned ? "Unpin" : "Pin"} lower spectrum" aria-pressed="${comparison.bottomPinned}">📌</button><span><strong>Lower</strong> · ${esc(comparison.bottom.datasetName || "Dataset")} · ${esc(comparison.bottom.title || "Spectrum")}</span></div>${similarityMarkup(similarity)}` : `<div class="comparison-hint">Pin the upper spectrum, then select another spectrum to compare.</div>`}
             </div>
             <div id="plot-root"></div>
           </section>
+          <div id="workspace-splitter" class="workspace-splitter" role="separator" tabindex="0" aria-label="Resize the spectrum and the peak table" aria-valuemin="12" aria-valuemax="80" aria-valuenow="${Math.round(peaksShare[comparison.bottom ? "compared" : "single"] * 100)}"></div>
           <aside class="peaks-panel ${comparison.bottom ? "compared" : ""}">
             <div class="peaks-header"><h2>Peaks</h2><div>${["tsv", "csv"].map((format) => `<button id="copy-peaks-${format}" type="button">Copy ${format.toUpperCase()}</button>`).join("")}<button id="save-peaks" type="button">Save…</button></div></div>
             <div class="peak-scroll">
@@ -681,6 +806,7 @@
             </div>
           </aside>
         </div>
+        <div id="metadata-splitter" class="metadata-splitter" role="separator" aria-orientation="horizontal" tabindex="0" aria-label="Resize the metadata" aria-valuemin="10" aria-valuemax="80" aria-valuenow="${Math.round(metadataShare * 100)}" ${metadataOpen ? "" : "hidden"}></div>
         <details id="spectrum-metadata" class="metadata-details" ${metadataOpen ? "open" : ""}>
           <summary>Metadata</summary>
           ${metadata}
@@ -727,7 +853,14 @@
     };
     document.getElementById("spectrum-metadata").ontoggle = event => {
       metadataOpen = event.currentTarget.open;
+      app.querySelector(".spectrum-viewer")?.classList.toggle("metadata-open", metadataOpen);
+      const splitter = document.getElementById("metadata-splitter");
+      if (splitter) splitter.hidden = !metadataOpen;
     };
+    const settings = document.getElementById("similarity-settings");
+    if (settings) settings.ontoggle = () => { similaritySettingsOpen = settings.open; rememberLayout(); };
+    bindSplitter();
+    bindMetadataSplitter();
     const pinBottom = document.getElementById("pin-bottom");
     if (pinBottom) pinBottom.onclick = () => {
       comparison.bottomPinned = !comparison.bottomPinned;
@@ -831,7 +964,9 @@
     const intensitySort = document.getElementById("sort-intensity");
     if (!root || !tbody || !reset || !exportImage) return;
 
-    const W = 900, H = 540, L = 72, R = 32, T = 30, B = 62;
+    // Margins of the plot; its size is that of #plot-root on screen (so it
+    // fills the panel in both directions), and 900 × 540 for image export.
+    const L = 72, R = 32, T = 30, B = 62;
     const allPeaks = [...peaks, ...lowerPeaks];
     const rawMax = allPeaks.length ? Math.max(...allPeaks.map((p) => p.x)) : 1;
     const fullXStep = niceStep(Math.max(1, rawMax), 6);
@@ -850,8 +985,11 @@
       document.querySelector(`[data-peak-row="${index}"]`)?.scrollIntoView({ block: "nearest" });
     };
 
-    const draw = (options = null) => {
+    // plotOnly: redraw the plot at a new size, leaving the peak table as it is.
+    const draw = (options = null, plotOnly = false) => {
       if (!state) return;
+      const W = options ? 900 : Math.max(320, Math.round(root.clientWidth) || 900);
+      const H = options ? 540 : Math.max(200, Math.round(root.clientHeight) || 540);
       const domain = options ? exportRange(options.mzMin, options.mzMax, state.domain) : state.domain;
       const domainWidth = Math.max(Number.EPSILON, domain[1] - domain[0]);
       const yDomain = options ? exportRange(options.intensityMin, options.intensityMax, state.yDomain) : state.yDomain;
@@ -899,6 +1037,7 @@
       }
       root.innerHTML = markup;
 
+      if (!plotOnly) {
       if (comparing) {
         const aligned = alignPeakRows(peaks, lowerPeaks, comparisonTolerance(), state.sortAscending);
         tbody.innerHTML = aligned.map(({ upper, lower }) => {
@@ -924,12 +1063,13 @@
       });
       mzSorts.forEach((sort) => { sort.textContent = `m/z ${state.sortAscending ? "↑" : "↓"}`; });
       if (intensitySort) intensitySort.textContent = `Intensity ${state.sortKey === "intensity" ? (state.sortAscending ? "↑" : "↓") : ""}`;
+      tbody.querySelectorAll("[data-peak-button]").forEach((el) => el.addEventListener("click", () => choose(Number(el.dataset.peakButton))));
+      }
 
       root.querySelectorAll("[data-peak]").forEach((el) => el.addEventListener("click", (e) => {
         e.stopPropagation();
         choose(Number(el.dataset.peak));
       }));
-      tbody.querySelectorAll("[data-peak-button]").forEach((el) => el.addEventListener("click", () => choose(Number(el.dataset.peakButton))));
 
       const svg = root.querySelector("#spectrum-svg");
       if (!svg) return;
@@ -1010,6 +1150,21 @@
     exportPlot = options => draw(options);
     exportImage.onclick = openExportPreview;
     draw();
+    // Redraw the plot when its panel changes size (window, splitters, metadata).
+    plotResize?.disconnect();
+    if (typeof ResizeObserver === "function") {
+      let frame = 0, size = `${root.clientWidth}x${root.clientHeight}`;
+      plotResize = new ResizeObserver(() => {
+        cancelAnimationFrame(frame);
+        frame = requestAnimationFrame(() => {
+          const next = `${root.clientWidth}x${root.clientHeight}`;
+          if (next === size || !root.isConnected) return;
+          size = next;
+          draw(null, true);
+        });
+      });
+      plotResize.observe(root);
+    }
   }
 
   window.addEventListener("message", (event) => {

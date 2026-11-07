@@ -148,8 +148,12 @@ display filter/sort views.
  "dataset1": "<query dataset id>",
  "dataset2": "<reference dataset id>",     // or "reference_path": "<file>"
  "path": "/data/result.mssim",             // must not be an input file
- "parameters": {"method": "cosine",        // or "reverse_cosine"
-                "threshold": 0.8,           // library_search
+ "parameters": {"methods": ["cosine"],     // one or more of "cosine", "reverse_cosine",
+                                           // "modified_cosine", "bonanza": one score column each
+                                           // ("method": one name, as before, is also accepted)
+                "precursor_column": "",    // modified_cosine/bonanza: precursor m/z column;
+                                           // "" detects PrecursorMZ, precursor_mz, PEPMASS, ParentMZ
+                "threshold": 0.8,           // library_search: kept when any method scores >= it
                 "key1": "SpecID", "key2": "SpecID",   // by_key
                 "mz_tolerance": "0.01Da,10ppm",   // peaks match within either term;
                                                   // e.g. "10ppm" or "0.01Da" uses one rule only
@@ -167,9 +171,10 @@ over `SIMILARITY_DEFAULTS` and validates them.
 
 | request | fields | answer |
 |---|---|---|
-| `page` (UI: `page-request`) | `page`, `filters`, `sort` {`column`, `direction`}, `bins` (1–200) | `similarity-page` |
+| `page` (UI: `page-request`) | `page`, `filters`, `sort` {`column`, `direction`}, `bins` (1–200), `score` (the score column of the histogram and statistics; default the first) | `similarity-page` |
 | `reload` | as `page` | rereads the file, then `similarity-page` |
-| `match` (UI: `open-similarity-match` {`resultIndex`}) | `row` | `similarity-match` {`query`, `reference`, `method`} |
+| `coverage` (UI: `coverage-request`) | `filters`, `score` (y axis; default the first score column), `side` (1 or 2), `x_bins`, `y_bins` (1–500, default 20 / `x_bins`), `x_range`, `y_range` ([min, max], default [0, 1]), `max_points` (default 20000), `request_id` (echoed) | `similarity-coverage` |
+| `match` (UI: `open-similarity-match` {`resultIndex`, `score`}) | `row`, `score` | `similarity-match` {`query`, `reference`, `method` (the score column, as the comparison's initial method)} |
 | `export` | `path` (`.mssim`, `.parquet`, `.csv`, `.tsv`), `filters`, `sort` | `export-complete` {`path`, `total_rows`} |
 
 Errors answer `error` {`message`}. Filters here use the same operators except
@@ -179,13 +184,43 @@ that `text_eq` and `!=` are case-sensitive and unknown columns are errors.
 
 ```jsonc
 {
-  "columns": ["index1", "index2", "similarity", "data_index1", "data_index2"],
+  "columns": ["index1", "index2", "cosine", "bonanza", "intensity_coverage1", "intensity_coverage2",
+              "data_index1", "data_index2"],
+  "score_columns": ["cosine", "bonanza"],      // one per calculated method
+  "score": "cosine",                           // the column of histogram and statistics
+  "scored_rows": 4,                            // filtered rows with a value in it
   "rows": [...], "result_indices": [0, 1],     // row numbers in the result table
   "page": 0, "total_pages": 2, "page_size": 50, "total_rows": 4, "unfiltered_rows": 4,
   "metadata": {...},                           // the result's metadata.json
   "has_matched_data": true, "matched_data_rows": [2, 2],
   "histogram": {"counts": [...], "edges": [...]},   // of all filtered rows
+  "histograms": {"cosine": [...], "bonanza": [...]},  // counts of every score column, same edges
+  "statistics_by_score": {"cosine": {"count": ..., "mean": ..., ...}, ...},
   "statistics": {"mean": ..., "q1": ..., "median": ..., "q3": ..., "min": ..., "max": ...}
+}
+```
+
+`similarity-coverage` plots `intensity_coverage<side>` (x) against the score
+column `score` (y) for the filtered rows that have both; results without the
+coverage columns answer `error`. For `modified_cosine` and `bonanza` the x axis is
+`modified_intensity_coverage<side>` (the coverage of its own pairing) when the
+result has it; `column` names the one used. The UI draws the bound √coverage
+only where it holds: `cosine`, `reverse_cosine` against side 2, and
+`modified_cosine` against its own coverage.
+
+```jsonc
+{
+  "side": 1, "column": "intensity_coverage1", "score": "cosine", "request_id": ...,
+  "total_rows": 27827, "plotted_rows": 27827,  // rows with both values
+  "in_range_rows": 27827, "above_bound_rows": 0, // above_bound: similarity > √coverage
+  "x_bins": 20, "y_bins": 20, "x_range": [0, 1], "y_range": [0, 1],
+  "counts": [...],               // y_bins × x_bins, row-major from the bottom row;
+                                 // the last bin of each axis includes its maximum
+  "points": {"x": [...], "y": [...]},  // every row, or a fixed-seed random sample of max_points
+  "sampled": true,
+  "intensity_exponent": 0.5,     // from the metadata
+  "marginals": {"x": {"grid": [...], "density": [...]}, "y": {...}}
+                                 // Gaussian KDE (Scott's bandwidth) at 201 points over [0, 1]
 }
 ```
 
@@ -250,7 +285,8 @@ Dataset table (`ui/viewer.js`):
 | `*-notification`, `open-settings`, `show-logs` | shows a message, the settings, or the logs |
 
 Similarity result (`ui/similarity.js`): `webview-ready` as above; `page-request` → `page`, `reload` →
-`reload` (both with `page`, `filters`, `sort`, `bins`); `open-similarity-match`
+`reload` (both with `page`, `filters`, `sort`, `bins`); `coverage-request` → `coverage`
+(same fields); `open-similarity-match`
 {`resultIndex`} → `match` {`row`}, whose answer opens a `spectrum-comparison`;
 `export-similarity` {`filters`, `sort`} → asks format and path → `export`;
 `save-similarity-image` {`filename`, `bytes`} → saves the file and answers
