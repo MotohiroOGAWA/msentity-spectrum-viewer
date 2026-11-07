@@ -10,7 +10,12 @@ test("finds the repository build and names platforms", () => {
   assert.equal(findBackendExecutable({ override: "/nonexistent/backend", roots: [], env: {} }), null);
   assert.equal(executableName("win32"), "msentity-viewer-backend.exe");
   assert.equal(platformId("linux", "x64"), "linux-x64");
-  if (BACKEND) assert.equal(findBackendExecutable({ roots: [ROOT], env: {} }), BACKEND);
+  if (BACKEND) {
+    // MSENTITY_VIEWER_BACKEND comes first; it is set when the backend is built
+    // outside the repository (as for a release).
+    assert.equal(findBackendExecutable({ roots: [], env: { MSENTITY_VIEWER_BACKEND: BACKEND } }), BACKEND);
+    if (!process.env.MSENTITY_VIEWER_BACKEND) assert.equal(findBackendExecutable({ roots: [ROOT], env: {} }), BACKEND);
+  }
 });
 
 test("messages, logs, and exit of a backend process", { skip }, async () => {
