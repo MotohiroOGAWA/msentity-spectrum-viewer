@@ -184,7 +184,7 @@ that `text_eq` and `!=` are case-sensitive and unknown columns are errors.
 
 ```jsonc
 {
-  "columns": ["index1", "index2", "cosine", "bonanza", "intensity_coverage1", "intensity_coverage2",
+  "columns": ["index1", "index2", "cosine", "bonanza", "peak_intensity_coverage1", "peak_intensity_coverage2",
               "data_index1", "data_index2"],
   "score_columns": ["cosine", "bonanza"],      // one per calculated method
   "score": "cosine",                           // the column of histogram and statistics
@@ -200,17 +200,17 @@ that `text_eq` and `!=` are case-sensitive and unknown columns are errors.
 }
 ```
 
-`similarity-coverage` plots `intensity_coverage<side>` (x) against the score
+`similarity-coverage` plots `peak_intensity_coverage<side>` (x) against the score
 column `score` (y) for the filtered rows that have both; results without the
 coverage columns answer `error`. For `modified_cosine` and `bonanza` the x axis is
-`modified_intensity_coverage<side>` (the coverage of its own pairing) when the
+`modified_peak_intensity_coverage<side>` (the coverage of its own pairing) when the
 result has it; `column` names the one used. The UI draws the bound √coverage
 only where it holds: `cosine`, `reverse_cosine` against side 2, and
 `modified_cosine` against its own coverage.
 
 ```jsonc
 {
-  "side": 1, "column": "intensity_coverage1", "score": "cosine", "request_id": ...,
+  "side": 1, "column": "peak_intensity_coverage1", "score": "cosine", "request_id": ...,
   "total_rows": 27827, "plotted_rows": 27827,  // rows with both values
   "in_range_rows": 27827, "above_bound_rows": 0, // above_bound: similarity > √coverage
   "x_bins": 20, "y_bins": 20, "x_range": [0, 1], "y_range": [0, 1],

@@ -14,7 +14,7 @@
   // Line colors of the score columns in the "All methods" plot.
   const METHOD_COLORS = { cosine: "#3794ff", reverse_cosine: "#d18616", modified_cosine: "#2e9e4f", bonanza: "#b04fc4", similarity: "#3794ff" };
   // Views of the distribution section: the score distribution, or intensity
-  // coverage against similarity (needs the intensity_coverage1/2 columns).
+  // coverage against similarity (needs the peak_intensity_coverage1/2 columns).
   const VIEWS = [["distribution", "Similarity distribution"], ["coverage", "Coverage vs similarity"]];
   const COVERAGE_PLOTS = [["density", "Density"], ["scatter", "Scatter"]];
   // Coverage plot: density (2D histogram, xBins columns; yBins "" = square
@@ -153,7 +153,7 @@
           <div><span>Stored data</span><strong>${value.has_matched_data ? `${number(value.matched_data_rows[0])} + ${number(value.matched_data_rows[1])}` : "Lightweight"}</strong></div>
           ${Object.entries(value.statistics).map(([key, n]) => `<div><span>${esc(key)}</span><strong>${number(n)}</strong></div>`).join("")}
         </section>
-        <section class="distribution"><div class="section-title"><div><h2>${showCoverage ? `Intensity coverage and ${esc(scoreLabel(activeScore()).toLowerCase())}` : methodsChart ? "Score distribution of every method" : `${esc(scoreLabel(activeScore()))} distribution`}</h2>
+        <section class="distribution"><div class="section-title"><div><h2>${showCoverage ? `Peak intensity coverage and ${esc(scoreLabel(activeScore()).toLowerCase())}` : methodsChart ? "Score distribution of every method" : `${esc(scoreLabel(activeScore()))} distribution`}</h2>
           <p>${showCoverage ? `${coverage.plot === "density" ? "Number of filtered rows per cell" : "One point per filtered row"}${boundApplies() ? (coverage.bound ? `; the dotted line is the largest possible ${esc(scoreLabel(activeScore()).toLowerCase())}, √coverage${activeScore() === "modified_cosine" ? " of its own pairing (direct and precursor-shifted peaks)" : ""}` : "")
               : `; no √coverage bound for ${esc(scoreLabel(activeScore()))}${activeScore() === "reverse_cosine" ? " against the query's coverage (it bounds the reference's)" : activeScore() === "modified_cosine" ? " in this result (recalculate it to get the coverage of the modified-cosine pairing)" : ""}`}.`
             : chartType === "box" ? "Box plot across all filtered rows, showing minimum, Q1, median, Q3, and maximum."
@@ -164,15 +164,15 @@
           <label>Count <select id="count-scale" ${disabled || !countChart ? "disabled" : ""}>${option("linear", "Linear", countScale === "linear")}${option("log", "Log₁₀", countScale === "log")}</select></label>
           <label>Bins <input id="bins" type="number" min="1" max="200" step="1" value="${bins}" ${disabled || !countChart ? "disabled" : ""} /></label>`}
           <button id="save-image" ${disabled || (showCoverage && !coverageCache.get(coverageKey)) ? "disabled" : ""}>Save image…</button></div></div>
-          ${view === "coverage" && !hasCoverage ? `<p class="hint">This result has no intensity coverage columns (intensity_coverage1, intensity_coverage2). Recalculate it to plot coverage.</p>` : ""}
-          <div id="chart" class="${showCoverage ? "coverage-chart" : ""}" role="img" aria-label="${showCoverage ? "Intensity coverage against similarity" : chartType === "box" ? "Similarity score box plot" : "Similarity score distribution"}"></div>
+          ${view === "coverage" && !hasCoverage ? `<p class="hint">This result has no peak intensity coverage columns (peak_intensity_coverage1, peak_intensity_coverage2). Recalculate it to plot coverage.</p>` : ""}
+          <div id="chart" class="${showCoverage ? "coverage-chart" : ""}" role="img" aria-label="${showCoverage ? "Peak intensity coverage against similarity" : chartType === "box" ? "Similarity score box plot" : "Similarity score distribution"}"></div>
           <div id="chart-hint" class="hint" aria-live="polite">${showCoverage ? coverageHint() : chartHint()}</div>
           ${showCoverage ? "" : methodsChart ? methodTables() : `<details><summary>Frequency table</summary><div class="frequency-table"><table><thead><tr><th>Similarity range</th><th>Count</th></tr></thead>
           <tbody>${value.histogram.counts.map((count, i) => `<tr><td>${rangeLabel(i)}</td><td>${number(count)}</td></tr>`).join("")}</tbody></table></div></details>`}
         </section>
         <section><div class="section-title"><h2>Comparison results</h2>${columns.some((column) => /^index[12]$/.test(column)) ? "<span>Indices are zero-based input positions</span>" : ""}</div>
         <div class="table-scroll"><table><thead><tr>${value.has_matched_data ? "<th>Match</th>" : ""}${columns.map((column) => `<th aria-sort="${sort?.column === column ? (sort.direction === "asc" ? "ascending" : "descending") : "none"}"><button data-sort="${esc(column)}" ${disabled}>${esc(columnLabel(column))} ${sort?.column === column ? (sort.direction === "asc" ? "↑" : "↓") : "↕"}</button></th>`).join("")}</tr></thead>
-        <tbody>${value.rows.length ? value.rows.map((row, index) => `<tr>${value.has_matched_data ? `<td><button data-open-match="${Number(value.result_indices[index])}" ${disabled}>Open spectra</button></td>` : ""}${columns.map((column) => `<td>${/^(cosine|reverse_cosine|modified_cosine|bonanza|similarity|intensity_coverage[12])$/.test(column) ? number(row[column]) : esc(typeof row[column] === "object" && row[column] !== null ? JSON.stringify(row[column]) : row[column])}</td>`).join("")}</tr>`).join("") : `<tr><td colspan="${columns.length + (value.has_matched_data ? 1 : 0)}" class="empty">No matching rows</td></tr>`}</tbody></table></div>
+        <tbody>${value.rows.length ? value.rows.map((row, index) => `<tr>${value.has_matched_data ? `<td><button data-open-match="${Number(value.result_indices[index])}" ${disabled}>Open spectra</button></td>` : ""}${columns.map((column) => `<td>${/^(cosine|reverse_cosine|modified_cosine|bonanza|similarity|peak_intensity_coverage[12])$/.test(column) ? number(row[column]) : esc(typeof row[column] === "object" && row[column] !== null ? JSON.stringify(row[column]) : row[column])}</td>`).join("")}</tr>`).join("") : `<tr><td colspan="${columns.length + (value.has_matched_data ? 1 : 0)}" class="empty">No matching rows</td></tr>`}</tbody></table></div>
         <footer><button id="previous" ${busy || value.page === 0 ? "disabled" : ""}>Previous</button><span>Page ${value.page + 1} / ${value.total_pages}</span><button id="next" ${busy || value.page + 1 >= value.total_pages ? "disabled" : ""}>Next</button></footer></section>
         <details class="metadata"><summary>Calculation metadata</summary><p>Reload reads the saved result. Recalculate from the dataset viewer to use changed spectra.</p><pre>${esc(JSON.stringify(value.metadata, null, 2))}</pre></details>
       ` : "<p>Opening similarity results…</p>"}
@@ -479,10 +479,10 @@
     update();
   }
 
-  // ---- intensity coverage plot ---------------------------------------------------------------
+  // ---- peak intensity coverage plot ---------------------------------------------------------------
 
   function hasCoverageColumns() {
-    return Boolean(value?.columns?.includes("intensity_coverage1") && value.columns.includes("intensity_coverage2"));
+    return Boolean(value?.columns?.includes("peak_intensity_coverage1") && value.columns.includes("peak_intensity_coverage2"));
   }
   // "query" / "reference" (library search) or "first (a)" / "second (b)" (by key).
   function sideLabel(side) {
@@ -496,15 +496,15 @@
   // similarity <= √coverage holds for cosine (either side) and for reverse
   // cosine against the reference's coverage (side 2) only.
   // Modified cosine is plotted against the coverage of its own pairing
-  // (modified_intensity_coverage1/2), when the result has it.
-  const modifiedCoverage = () => Boolean(value?.columns?.includes("modified_intensity_coverage1"));
+  // (modified_peak_intensity_coverage1/2), when the result has it.
+  const modifiedCoverage = () => Boolean(value?.columns?.includes("modified_peak_intensity_coverage1"));
   function boundApplies(side = coverage.side, name = activeScore()) {
     return name === "cosine" || (name === "reverse_cosine" && side === 2) || (name === "modified_cosine" && modifiedCoverage());
   }
   // The coverage on the x axis, in words: modified cosine and BONANZA use the
   // coverage of their pairing, which includes precursor-shifted peaks.
   const coverageName = (side, score = activeScore()) =>
-    `intensity coverage${["modified_cosine", "bonanza"].includes(score) && modifiedCoverage() ? " with shifted peaks" : ""} of the ${sideLabel(side)}`;
+    `peak intensity coverage${["modified_cosine", "bonanza"].includes(score) && modifiedCoverage() ? " with shifted peaks" : ""} of the ${sideLabel(side)}`;
   const positiveInteger = (text, maximum) => {
     const n = Number(text);
     return Number.isInteger(n) && n >= 1 && n <= maximum ? n : null;

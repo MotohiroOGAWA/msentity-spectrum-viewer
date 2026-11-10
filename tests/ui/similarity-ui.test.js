@@ -196,8 +196,8 @@ async function browserTests() {
     await page.waitForFunction(() => document.querySelector(".stats strong").textContent.startsWith("3"));
     // The key column identifies the pairs of this by-key result: index* and data_index* are hidden.
     assert.deepEqual(await page.locator("[data-sort]").evaluateAll((b) => b.map((e) => e.dataset.sort)),
-      ["SpecID", "cosine", "modified_cosine", "intensity_coverage1", "intensity_coverage2",
-        "modified_intensity_coverage1", "modified_intensity_coverage2"]);
+      ["SpecID", "cosine", "modified_cosine", "peak_intensity_coverage1", "peak_intensity_coverage2",
+        "modified_peak_intensity_coverage1", "modified_peak_intensity_coverage2"]);
     assert.deepEqual(await page.locator("#score-column option").allTextContents(), ["Cosine", "Modified cosine"]);
     assert.match(await page.locator('[data-sort="SpecID"]').innerText(), /^a\.SpecID = b\.SpecID/);
     await page.locator("#bins").fill("2"); await page.locator("#bins").press("Tab");
@@ -269,7 +269,7 @@ async function browserTests() {
     await page.evaluate(() => window.dispatchEvent(new MessageEvent("message", { data: { type: "image-save-cancelled" } })));
     await page.locator("#cancel-image").click();
 
-    // Coverage view: intensity coverage against similarity with the √coverage
+    // Coverage view: peak intensity coverage against similarity with the √coverage
     // bound. B (coverage 0.8, cosine 0.894) lies on the bound.
     await page.locator("#chart-view").selectOption("coverage");
     await page.waitForFunction(() => document.querySelector("#chart-hint").textContent.includes("20 × 20 cells"));
@@ -306,7 +306,7 @@ async function browserTests() {
     await page.locator("#coverage-plot").selectOption("scatter");
     await page.locator("#score-column").selectOption("modified_cosine");
     await page.waitForFunction(() => document.querySelector("#chart-hint").textContent.startsWith("0 rows"));
-    assert.match(await page.locator("#chart-hint").innerText(), /intensity coverage with shifted peaks/);
+    assert.match(await page.locator("#chart-hint").innerText(), /peak intensity coverage with shifted peaks/);
     assert.ok((await page.locator("#chart svg").innerHTML()).includes("max = √coverage"));
     assert.match(await page.locator(".stats").innerText(), /0 with Modified cosine/);
     // The √coverage line can be hidden.

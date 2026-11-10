@@ -117,10 +117,10 @@ test("key matching, result filters, histogram, and export", { skip }, () => {
     assert.deepEqual(exportedPage.metadata.export_view.filters, filters);
     assert.equal(exportedPage.metadata.export_view.source_rows, 2);
     assert.match(fs.readFileSync(tsv, "utf8"),
-      /^SpecID\tOtherID\tindex1\tindex2\tcosine\tintensity_coverage1\tintensity_coverage2\na\ta\t0\t1\t/);
+      /^SpecID\tOtherID\tindex1\tindex2\tcosine\tpeak_intensity_coverage1\tpeak_intensity_coverage2\na\ta\t0\t1\t/);
     assert.equal(fs.readFileSync(parquet).subarray(0, 4).toString(), "PAR1");
 
-    // Intensity coverage (exponent 0.5: the matched share of the summed
+    // Peak intensity coverage (exponent 0.5: the matched share of the summed
     // intensity) against similarity. a: coverage 4/5 and cosine 2/√5 = √(4/5),
     // on the bound; b: nothing matches.
     const coverage = resultPage(output, [
@@ -139,7 +139,7 @@ test("key matching, result filters, histogram, and export", { skip }, () => {
     assert.equal(plots[0].points.x.length, 1);
     assert.equal(plots[0].intensity_exponent, 0.5);
     assert.equal(plots[0].marginals.x.grid.length, plots[0].marginals.x.density.length);
-    assert.equal(plots[1].column, "intensity_coverage2");
+    assert.equal(plots[1].column, "peak_intensity_coverage2");
     assert.deepEqual([plots[1].x_bins, plots[1].y_bins, plots[1].total_rows], [20, 20, 1]);
     assert.deepEqual(plots[1].points, { x: [1], y: [plots[1].points.y[0]] });
     assert.ok(Math.abs(plots[1].points.y[0] - 2 / Math.sqrt(5)) < 1e-6);
@@ -227,8 +227,8 @@ test("several methods: one score column each, chosen per request", { skip }, () 
     assert.match(ofType(viewer, "error")[0].message, /Not a score column of this result: reverse_cosine/);
     const plot = ofType(viewer, "similarity-coverage")[0].value;
     assert.equal(plot.score, "modified_cosine");
-    assert.equal(plot.column, "modified_intensity_coverage1");   // its own pairing's coverage
-    assert.equal(ofType(viewer, "similarity-coverage")[1].value.column, "modified_intensity_coverage2");   // BONANZA: same pairing
+    assert.equal(plot.column, "modified_peak_intensity_coverage1");   // its own pairing's coverage
+    assert.equal(ofType(viewer, "similarity-coverage")[1].value.column, "modified_peak_intensity_coverage2");   // BONANZA: same pairing
     assert.equal(plot.plotted_rows, 1);
     assert.equal(ofType(viewer, "similarity-match")[0].method, "bonanza");
     assert.equal(ofType(resultPage(output, [{ type: "page", page: 1 }]), "similarity-page")[0].value.rows[0].bonanza, null);

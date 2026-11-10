@@ -230,7 +230,7 @@ The `.mssim` file opens in a dedicated **Similarity Viewer**:
 - **Score** chooses the score column (one per calculated method) used by the
   filter, statistics, distribution, and coverage plot, and the initial method
   of **Open spectra**.
-- **View → Coverage vs similarity** plots each row's intensity coverage (the
+- **View → Coverage vs similarity** plots each row's peak intensity coverage (the
   share of Σ intensity^(2α) carried by directly matched peaks, α = the
   intensity exponent; with α = 0.5 the share of the summed intensity) against
   the chosen score. For cosine, for reverse cosine against the reference's

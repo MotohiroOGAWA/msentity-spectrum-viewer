@@ -1,5 +1,5 @@
 // Similarity result viewer backend: pages, histogram, statistics, matched
-// spectra, the intensity coverage plot, and export of a filtered .mssim result.
+// spectra, the peak intensity coverage plot, and export of a filtered .mssim result.
 
 #include <algorithm>
 #include <cctype>
@@ -268,7 +268,7 @@ class SimilarityBackend {
                             {"min", finite(summary.min)}, {"max", finite(summary.max)}}}};
   }
 
-  // Intensity coverage (x) against similarity (y) of the filtered rows: a 2D
+  // Peak intensity coverage (x) against similarity (y) of the filtered rows: a 2D
   // histogram over x_range × y_range (x_bins × y_bins cells, rows from the
   // bottom; the last bin of each axis includes its maximum), up to max_points
   // points (a fixed-seed random sample when there are more rows), and the
@@ -285,11 +285,11 @@ class SimilarityBackend {
     // Modified cosine and BONANZA are plotted against the coverage of their
     // own pairing (direct and precursor-shifted peaks; it bounds modified
     // cosine), when the result has that column.
-    std::string column = "intensity_coverage" + std::to_string(side);
+    std::string column = "peak_intensity_coverage" + std::to_string(side);
     if ((score == "modified_cosine" || score == "bonanza") && has("modified_" + column)) column = "modified_" + column;
     if (!has(column)) {
       throw std::invalid_argument(
-          "This result has no intensity coverage columns. Recalculate it to plot coverage.");
+          "This result has no peak intensity coverage columns. Recalculate it to plot coverage.");
     }
     const int x_bins = bin_count(request, "x_bins", 20);
     const int y_bins = bin_count(request, "y_bins", x_bins);

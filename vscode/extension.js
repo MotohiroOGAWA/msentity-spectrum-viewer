@@ -321,7 +321,7 @@ class MSEntityViewerProvider {
             ...configuredStructureOptions() });
           break;
         case "coverage-request":
-          // Similarity result: intensity coverage plot data (answer similarity-coverage).
+          // Similarity result: peak intensity coverage plot data (answer similarity-coverage).
           writeRequest({ type: "coverage", filters: message.filters, side: message.side, score: message.score,
             x_bins: message.x_bins, y_bins: message.y_bins, x_range: message.x_range,
             y_range: message.y_range, max_points: message.max_points, request_id: message.request_id });
