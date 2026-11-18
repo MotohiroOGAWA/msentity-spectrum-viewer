@@ -6,7 +6,7 @@
 // Requests from the UI go to `session.request(request)`; messages for the UI
 // arrive through `onMessage`. Requests are processed in order. The session
 // answers the chemistry requests itself:
-//   * filters with operator "smarts" are resolved to {operator: "row_ids"}
+//   * SMARTS filters are resolved to {operator: "row_ids"}
 //     before page, reload, export, and structure-count requests;
 //   * render-structure and calculate-structure-counts use RDKit;
 //   * a "capabilities" message follows "backend-ready".
@@ -15,9 +15,13 @@ const { NO_CHEMISTRY } = require("./chemistry");
 
 const MAX_SMARTS_RESULTS = 16;
 
+const isSmartsCondition = node => node &&
+  (node.operator === "smarts" || node.operator === "smarts_not_match") &&
+  node.value != null && String(node.value) !== "";
+
 const containsSmarts = node => Array.isArray(node)
   ? node.some(containsSmarts)
-  : Boolean(node && ((node.operator === "smarts" && node.value != null && String(node.value) !== "") ||
+  : Boolean(node && (isSmartsCondition(node) ||
     (Array.isArray(node.children) && node.children.some(containsSmarts))));
 
 const RESOLVED_TYPES = new Set(["page", "reload", "export", "calculate-structure-counts"]);
@@ -100,7 +104,7 @@ class DatasetSession {
     this.backend.send({ ...request, filters });
   }
 
-  /** Replace SMARTS conditions with the row ids of the matching spectra. */
+  /** Resolve SMARTS conditions to row IDs. */
   async resolveFilters(datasetId, filters) {
     if (!containsSmarts(filters)) return filters;
     const capabilities = await this.capabilities();
@@ -108,9 +112,11 @@ class DatasetSession {
       if (condition && Array.isArray(condition.children)) {
         return { ...condition, children: (await Promise.all(condition.children.map(resolve))).filter(Boolean) };
       }
-      if (!condition || condition.operator !== "smarts" || condition.value == null || String(condition.value) === "") return condition;
+      if (!isSmartsCondition(condition)) return condition;
       if (!capabilities.smarts_filter) throw new Error("SMARTS filtering requires optional RDKit support");
-      return this.matchSmarts(datasetId, condition.column, String(condition.value));
+      const rows = await this.matchSmarts(datasetId, condition.column, String(condition.value));
+      if (!rows) return null;
+      return { operator: "row_ids", row_ids: condition.operator === "smarts" ? rows.matching : rows.nonMatching };
     };
     if (Array.isArray(filters)) return (await Promise.all(filters.map(resolve))).filter(Boolean);
     return filters && typeof filters === "object" ? resolve(filters) : filters;
@@ -137,7 +143,10 @@ class DatasetSession {
       const reply = await this.backend.request({ type: "column-values", dataset_id: datasetId, column });
       if (reply.error) return null; // unknown column: ignored for legacy compatibility
       const matches = await this.chemistry.call("smarts-match", { values: reply.values, pattern });
-      return { operator: "row_ids", row_ids: reply.row_ids.filter((_, i) => matches[i]) };
+      const matching = [];
+      const nonMatching = [];
+      reply.row_ids.forEach((rowId, i) => (matches[i] ? matching : nonMatching).push(rowId));
+      return { matching, nonMatching };
     })();
     const entry = { datasetId, column, result };
     this.smartsResults.set(key, entry);

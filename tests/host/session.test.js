@@ -119,6 +119,9 @@ test("SMARTS matches are reused for paging, export, and counts until the source 
       file_type: "tsv" });
     assert.equal((await next("export-complete")).total_rows, 2);
     const matchCalls = () => chemistry.calls.filter(({ type }) => type === "smarts-match").length;
+    const inverse = { ...condition, operator: "smarts_not_match" };
+    assert.equal((await page({ filters: { logic: "and", children: [inverse] } })).total_rows, 1);
+    assert.equal((await page({ filters: { logic: "or", children: [condition, inverse] } })).total_rows, 3);
     assert.equal(matchCalls(), 1);
 
     const { row_ids } = await page();

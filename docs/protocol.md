@@ -128,7 +128,8 @@ missing values last).
 | `numeric_eq`, `>`, `>=`, `<`, `<=` | `column`, `value` | numbers and numeric text; other cells never match |
 | `spectrum_peak` | `mz`, `tolerance`, `tolerance_unit` (`Da`/`ppm`), `intensity` (0–1, relative to the base peak) | a peak within the tolerance |
 | `neutral_loss` | as above, plus `precursor_column` (default `PrecursorMZ`) | a peak with precursor − m/z within the tolerance |
-| `smarts` | `column`, `value` (pattern) | resolved by the host into `row_ids` |
+| `smarts` | `column`, `value` (pattern) | rows whose structure matches the SMARTS pattern |
+| `smarts_not_match` | `column`, `value` (pattern) | rows without a match, including missing and invalid SMILES |
 | `row_ids` | `row_ids` | the listed spectra |
 
 Conditions on unknown columns, or with an empty value, are ignored.

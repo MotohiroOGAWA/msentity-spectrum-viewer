@@ -74,7 +74,7 @@ msentity::FilterNode filter_node(const MSDataset& dataset, const json& value) {
     } catch (const FilterError&) { throw FilterError("m/z, tolerance, and intensity must be numeric"); }
     condition.tolerance_ppm = fold_case(json_text(value.value("tolerance_unit", json("Da")))) == "ppm";
     condition.precursor_column = json_text(value.value("precursor_column", json("PrecursorMZ")));
-  } else if (op == "smarts") throw FilterError("SMARTS filtering requires optional RDKit support");
+  } else if (op == "smarts" || op == "smarts_not_match") throw FilterError("SMARTS filtering requires optional RDKit support");
   else throw FilterError("Unknown filter operator: " + op);
   if (condition.op != msentity::FilterOperator::RowIds &&
       condition.op != msentity::FilterOperator::SpectrumPeak &&
