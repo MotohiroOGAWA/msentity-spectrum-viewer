@@ -41,7 +41,7 @@ test("chemistry capabilities control Structure and SMARTS UI", () => {
   assert.doesNotMatch(app.innerHTML, /Structure<\/th>/);
   assert.doesNotMatch(app.innerHTML, /structure-column/);
   assert.doesNotMatch(app.innerHTML, /class="structure-button"/);
-  assert.doesNotMatch(app.innerHTML, /SMARTS substructure/);
+  assert.doesNotMatch(app.innerHTML, /SMARTS substructure|SMARTS does not match/);
 
   send({ type: "capabilities", chemistry: { backend: "rdkit", smarts_filter: true, structure_render: true } });
   assert.ok(app.innerHTML.indexOf("Spectrum</th>") < app.innerHTML.indexOf("Structure</th>"));
@@ -58,6 +58,7 @@ test("chemistry capabilities control Structure and SMARTS UI", () => {
   element("filter-button").handlers.click({ stopPropagation() {} });
   element("add-filter").handlers.click();
   assert.match(app.innerHTML, /value="smarts"[^>]*>SMARTS substructure/);
+  assert.match(app.innerHTML, /value="smarts_not_match"[^>]*>SMARTS does not match/);
   element("export-button").handlers.click();
   assert.deepEqual(Array.from(posted.at(-1).columns), ["Name", "SMILES"]);
   assert.equal(posted.at(-1).columns.includes("Structure"), false);

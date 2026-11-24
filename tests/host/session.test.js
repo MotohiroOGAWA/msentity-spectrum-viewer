@@ -3,6 +3,7 @@
 // filters and structure requests for the dataset viewer.
 const assert = require("node:assert/strict");
 const path = require("node:path");
+const fs = require("node:fs");
 const { test } = require("node:test");
 const { BackendProcess, RdkitChemistry, DatasetSession, NO_CHEMISTRY } = require("../../host");
 const { BACKEND, skip, tempDir } = require("../backend/helpers");
@@ -60,7 +61,7 @@ async function withSession(chemistry, run) {
   };
   backend.start();
   try {
-    await run({ session, next });
+    await run({ session, next, file });
   } finally {
     backend.stop();
     tmp.cleanup();
@@ -94,6 +95,46 @@ test("capabilities follow backend-ready; SMARTS filters become row ids", { skip 
     const error = await next("filter-error");
     assert.equal(error.operator, "smarts");
     assert.equal(error.message, "Invalid SMARTS pattern");
+  });
+});
+
+test("SMARTS matches are reused for paging, export, and counts until the source changes", { skip }, async () => {
+  const chemistry = fakeChemistry();
+  await withSession(chemistry, async ({ session, next, file }) => {
+    const { dataset } = await next("backend-ready");
+    const condition = { column: "SMILES", operator: "smarts", value: "CCO" };
+    const filters = { logic: "and", children: [condition, { ...condition }] };
+    const page = async (request = {}) => {
+      await session.request({ type: "page", dataset_id: dataset.id, filters, ...request });
+      return (await next("dataset-page")).value;
+    };
+    assert.equal((await page()).total_rows, 2);
+    assert.equal((await page({ page: 1, sort: [{ column: "Name", direction: "desc" }] })).total_rows, 2);
+
+    await session.request({ type: "calculate-structure-counts", filters, structure_smiles_column: "SMILES" });
+    assert.equal((await next("structure-counts")).total_rows, 2);
+    await session.request({ type: "render-structure", smiles: "CCO" });
+    await next("structure-rendered");
+    await session.request({ type: "export", filters, path: path.join(path.dirname(file), "filtered.tsv"),
+      file_type: "tsv" });
+    assert.equal((await next("export-complete")).total_rows, 2);
+    const matchCalls = () => chemistry.calls.filter(({ type }) => type === "smarts-match").length;
+    const inverse = { ...condition, operator: "smarts_not_match" };
+    assert.equal((await page({ filters: { logic: "and", children: [inverse] } })).total_rows, 1);
+    assert.equal((await page({ filters: { logic: "or", children: [condition, inverse] } })).total_rows, 3);
+    assert.equal(matchCalls(), 1);
+
+    const { row_ids } = await page();
+    await session.request({ type: "update-cell", row_id: row_ids[0], column: "SMILES", value: "N" });
+    assert.equal((await page()).total_rows, 1);
+    assert.equal(matchCalls(), 2);
+
+    fs.writeFileSync(file, "Name\tSMILES\tPeak\nnew\tN\t100,10\n");
+    await session.request({ type: "reload", filters });
+    await next("dataset-reloaded");
+    assert.equal((await next("dataset-page")).value.total_rows, 0);
+    assert.equal((await page()).total_rows, 0);
+    assert.equal(matchCalls(), 3);
   });
 });
 

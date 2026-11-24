@@ -183,7 +183,7 @@ class DatasetBackend {
     initial_id_ = utf8(input);
     add_entry(initial_id_, Entry{dataset, input, file_type, utf8(input.filename()), load_options_, {}, {}});
     emit({{"type", "backend-ready"}, {"file", initial_id_}, {"total_rows", dataset.size()},
-          {"page_size", page_size_},
+          {"page_size", page_size_}, {"defer_reload_page", true},
           {"dataset", {{"id", initial_id_}, {"name", utf8(input.filename())},
                        {"path", initial_id_}, {"total_rows", dataset.size()}}}});
 
@@ -191,11 +191,15 @@ class DatasetBackend {
     while (std::getline(std::cin, line)) {
       if (!line.empty() && line.back() == '\r') line.pop_back();
       if (line.find_first_not_of(" \t") == std::string::npos) continue;
+      json request;
       try {
-        handle(json::parse(line));
+        request = json::parse(line);
+        handle(request);
       } catch (const std::exception& error) {
         std::cerr << error.what() << std::endl;
-        emit({{"type", "error"}, {"title", "Backend error"}, {"message", error.what()}});
+        json reply = {{"type", "error"}, {"title", "Backend error"}, {"message", error.what()}};
+        if (request.is_object() && request.contains("request_id")) reply["request_id"] = request["request_id"];
+        emit(reply);
       }
     }
     return 0;
@@ -323,8 +327,11 @@ class DatasetBackend {
       } else {
         source.dataset = merge_snapshots(source.merge_sources, source.merge_source_names);
       }
-      emit({{"type", "dataset-reloaded"}, {"dataset_id", id}});
-      send_page(id, request, 0);
+      json reply = {{"type", "dataset-reloaded"}, {"dataset_id", id}};
+      const bool defer_page = request.value("defer_page", false);
+      if (defer_page) reply["request_id"] = request.value("request_id", json());
+      emit(reply);
+      if (!defer_page) send_page(id, request, 0);
     } else if (type == "similarity-options") {
       json datasets = json::array();
       for (const auto& key : order_) {
