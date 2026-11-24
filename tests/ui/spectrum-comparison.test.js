@@ -94,6 +94,51 @@ try { ({ chromium } = require('playwright')); } catch { chromium = null; }
     await page.locator('#similarity-exponent').fill('0');   // ignored: not positive
     await page.locator('#similarity-exponent').dispatchEvent('change');
     assert.equal(await page.locator('#similarity-exponent').inputValue(), '1');
+
+    // Each mirrored half zooms from zero to the endpoint farther from the baseline.
+    await page.locator('#reset-zoom').click();
+    const plot = page.locator('#spectrum-svg');
+    const dragPlot = async (from, to) => {
+      const [start, end] = await plot.evaluate((svg, points) => {
+        const [horizontal, vertical] = svg.querySelectorAll('line.axis');
+        const left = horizontal.x1.baseVal.value;
+        const right = horizontal.x2.baseVal.value;
+        const zero = horizontal.y1.baseVal.value;
+        return points.map(([x, y]) => {
+          const edge = y < 0 ? vertical.y1.baseVal.value : vertical.y2.baseVal.value;
+          const point = new DOMPoint(left + x * (right - left), zero + Math.abs(y) * (edge - zero))
+            .matrixTransform(svg.getScreenCTM());
+          return { x: point.x, y: point.y };
+        });
+      }, [from, to]);
+      await page.mouse.move(start.x, start.y);
+      await page.mouse.down();
+      await page.mouse.move(end.x, end.y, { steps: 4 });
+      await page.mouse.up();
+    };
+    const peakCoordinates = selector => plot.locator(selector).evaluateAll(lines =>
+      lines.map(line => ['x1', 'y1', 'y2'].map(name => Number(line.getAttribute(name)))));
+    const upperPeaks = () => peakCoordinates('.peak[data-peak]');
+    const lowerPeaks = () => peakCoordinates('.lower-peak');
+    const fullUpper = await upperPeaks();
+    const fullLower = await lowerPeaks();
+    await dragPlot([0.5, -0.2], [0.5, -0.4]);
+    const zoomedUpper = await upperPeaks();
+    assert.equal(zoomedUpper[0][1], fullUpper[0][1]);
+    assert.ok(Math.abs((fullUpper[0][1] - fullUpper[0][2]) / (zoomedUpper[0][1] - zoomedUpper[0][2]) - 0.4) < 0.01);
+    assert.deepEqual(await lowerPeaks(), fullLower);
+    await dragPlot([0.5, 0.4], [0.5, 0.15]);
+    const zoomedLower = await lowerPeaks();
+    assert.equal(zoomedLower[0][1], fullLower[0][1]);
+    assert.ok(Math.abs((fullLower[0][2] - fullLower[0][1]) / (zoomedLower[0][2] - zoomedLower[0][1]) - 0.4) < 0.01);
+    assert.deepEqual(await upperPeaks(), zoomedUpper);
+    await dragPlot([0.2, 0.15], [0.55, 0.15]);
+    const [sharedUpper] = await upperPeaks();
+    assert.deepEqual(await upperPeaks(), [[sharedUpper[0], ...zoomedUpper[0].slice(1)]]);
+    assert.deepEqual(await lowerPeaks(), [[sharedUpper[0], ...zoomedLower[0].slice(1)]]);
+    await page.locator('#reset-zoom').click();
+    assert.deepEqual(await upperPeaks(), fullUpper);
+    assert.deepEqual(await lowerPeaks(), fullLower);
     assert.deepEqual(errors, []);
     console.log('Spectrum comparison tests passed.');
   } finally {

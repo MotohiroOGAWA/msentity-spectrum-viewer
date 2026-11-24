@@ -502,6 +502,7 @@
     const dialog = document.getElementById("export-dialog");
     const preview = document.getElementById("export-preview");
     if (!dialog || !preview) return;
+    const frame = document.getElementById("export-preview-frame");
     const controls = {
       gridLines: document.getElementById("export-grid"),
       mzTickLabels: document.getElementById("export-mz-ticks"),
@@ -528,24 +529,49 @@
       height: exportDimension(controls.height?.value, 540)
     });
     const status = document.getElementById("export-status");
-    const update = () => {
+    const update = (persist = true) => {
       exportSettings = options();
-      vscode.setState({ ...vscode.getState(), exportSettings });
+      if (persist) vscode.setState({ ...vscode.getState(), exportSettings });
       try {
-      const svg = prepareExportSvg(exportSettings);
-      if (svg) svg.style.aspectRatio = `${svg.getAttribute("width")} / ${svg.getAttribute("height")}`;
-      preview.replaceChildren(...(svg ? [svg] : []));
-      if (status) status.textContent = "";
-      dialog.querySelectorAll(".export-actions button:not(#export-cancel)").forEach(b => b.disabled = false);
+        const svg = prepareExportSvg(exportSettings);
+        if (svg) svg.style.aspectRatio = `${exportSettings.width} / ${exportSettings.height}`;
+        frame.style.setProperty("--export-width", exportSettings.width);
+        preview.replaceChildren(...(svg ? [svg] : []));
+        if (status) status.textContent = "";
+        dialog.querySelectorAll(".export-actions button:not(#export-cancel)").forEach(b => b.disabled = false);
       } catch (error) {
         if (status) status.textContent = error.message;
         dialog.querySelectorAll(".export-actions button:not(#export-cancel)").forEach(b => b.disabled = true);
       }
     };
     Object.values(controls).forEach((input) => {
-      input.onchange = update;
-      input.oninput = update;
+      input.onchange = input.oninput = () => update();
     });
+
+    for (const handle of frame.querySelectorAll("[data-export-resize]")) {
+      const axes = handle.dataset.exportResize;
+      let drag = null;
+      handle.onpointerdown = (event) => {
+        if (!event.isPrimary || event.button !== 0 || drag) return;
+        const { width, height } = options();
+        drag = { id: event.pointerId, x: event.clientX, y: event.clientY, width, height,
+          scale: frame.getBoundingClientRect().width / width };
+        handle.setPointerCapture(event.pointerId);
+        event.preventDefault();
+      };
+      handle.onpointermove = (event) => {
+        if (drag?.id !== event.pointerId) return;
+        const resized = (size, delta) => exportDimension(Math.max(1, size + delta / drag.scale), size);
+        if (axes.includes("x")) controls.width.value = resized(drag.width, event.clientX - drag.x);
+        if (axes.includes("y")) controls.height.value = resized(drag.height, event.clientY - drag.y);
+        update(false);
+      };
+      handle.onlostpointercapture = (event) => {
+        if (drag?.id !== event.pointerId) return;
+        drag = null;
+        update();
+      };
+    }
     document.getElementById("export-reset").onclick = () => {
       for (const [key, input] of Object.entries(controls)) {
         if (input.type === "checkbox") input.checked = exportDefaults[key];
@@ -767,8 +793,10 @@
       sortAscending: true,
       domain: null,
       yDomain: null,
+      lowerDomain: null,
       ...(previousState ? { selectedPeak: previousState.selectedPeak, sortKey: previousState.sortKey,
-        sortAscending: previousState.sortAscending, domain: previousState.domain, yDomain: previousState.yDomain } : {})
+        sortAscending: previousState.sortAscending, domain: previousState.domain,
+        yDomain: previousState.yDomain, lowerDomain: previousState.lowerDomain } : {})
     };
 
     const metadata = comparison.bottom
@@ -842,7 +870,15 @@
               </fieldset>
             </div>
           </details>
-          <div id="export-preview" class="export-preview" aria-label="Image preview"></div>
+          <p class="export-help">Drag an edge handle to resize one dimension, or drag the corner to resize both.</p>
+          <div class="export-preview">
+            <div id="export-preview-frame" class="export-preview-frame">
+              <div id="export-preview" aria-label="Image preview"></div>
+              <div class="export-resize-handle" data-export-resize="x" aria-hidden="true"></div>
+              <div class="export-resize-handle" data-export-resize="y" aria-hidden="true"></div>
+              <div class="export-resize-handle" data-export-resize="xy" aria-hidden="true"></div>
+            </div>
+          </div>
           <div id="export-status" class="export-status" role="status" aria-live="polite"></div>
           <div class="export-actions"><button id="export-cancel" type="button">Cancel</button><button id="copy-svg" type="button">Copy SVG</button><button id="copy-png" type="button">Copy PNG</button><button id="export-svg" type="button">Save SVG</button><button id="export-png" type="button">Save PNG</button></div>
         </dialog>
@@ -977,7 +1013,7 @@
     const lowerYMax = lowerPeakMax > 0 ? lowerPeakMax * 1.1 : 1.1;
     if (!Array.isArray(state.domain)) state.domain = [...full];
     if (!Array.isArray(state.yDomain)) state.yDomain = [0, fullYMax];
-    let start = null, current = null, pressedPeak = null;
+    if (!Array.isArray(state.lowerDomain)) state.lowerDomain = [0, lowerYMax];
 
     const choose = (index) => {
       state.selectedPeak = index;
@@ -993,15 +1029,16 @@
       const domain = options ? exportRange(options.mzMin, options.mzMax, state.domain) : state.domain;
       const domainWidth = Math.max(Number.EPSILON, domain[1] - domain[0]);
       const yDomain = options ? exportRange(options.intensityMin, options.intensityMax, state.yDomain) : state.yDomain;
-      const lowerDomain = options ? exportRange(options.lowerMin, options.lowerMax, [0, lowerYMax]) : [0, lowerYMax];
+      const lowerDomain = options ? exportRange(options.lowerMin, options.lowerMax, state.lowerDomain) : state.lowerDomain;
       const yDomainWidth = Math.max(Number.EPSILON, yDomain[1] - yDomain[0]);
+      const lowerDomainWidth = lowerDomain[1] - lowerDomain[0];
       const shown = peaks.filter((p) => p.x >= domain[0] && p.x <= domain[1]);
       const lowerShown = lowerPeaks.filter((p) => p.x >= domain[0] && p.x <= domain[1]);
       const hasLower = lowerPeaks.length > 0;
       const baseline = hasLower ? H / 2 : H - B;
       const sx = (x) => L + (x - domain[0]) / domainWidth * (W - L - R);
       const sy = (y) => baseline - (y - yDomain[0]) / yDomainWidth * (baseline - T);
-      const lowerSy = (y) => baseline + (Math.max(lowerDomain[0], y) - lowerDomain[0]) / (lowerDomain[1] - lowerDomain[0]) * (H - B - baseline);
+      const lowerSy = (y) => baseline + (Math.max(lowerDomain[0], y) - lowerDomain[0]) / lowerDomainWidth * (H - B - baseline);
 
       let grid = "";
       const xTicks = ticks(domain[0], domain[1]);
@@ -1029,7 +1066,14 @@
       const peakLabels = labelPeaks(shown, yDomain, options).map((p) => `<text x="${sx(p.x)}" y="${Math.max(T + 11, sy(p.y) - 8)}" text-anchor="middle" class="peak-label">${p.x.toFixed(options?.decimals ?? 4)}</text>`).join("");
       const lowerSticks = lowerShown.map((p) => `<line x1="${sx(p.x)}" y1="${baseline}" x2="${sx(p.x)}" y2="${lowerSy(p.y)}" class="peak lower-peak"><title>m/z ${p.x} · intensity ${p.y}</title></line>`).join("");
       const lowerLabels = labelPeaks(lowerShown, lowerDomain, options).map((p) => `<text x="${sx(p.x)}" y="${Math.min(H - B - 4, lowerSy(p.y) + 14)}" text-anchor="middle" class="peak-label lower-label">${p.x.toFixed(options?.decimals ?? 4)}</text>`).join("");
-      const markup = `<svg id="spectrum-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="${hasLower ? "Compared mass spectra" : "Mass spectrum"}"><defs><clipPath id="plot-clip"><rect x="${L}" y="${T}" width="${W - L - R}" height="${H - T - B}"/></clipPath></defs><g class="spectrum-grid">${grid}</g><line x1="${L}" y1="${baseline}" x2="${W - R}" y2="${baseline}" class="axis"/><line x1="${L}" y1="${T}" x2="${L}" y2="${H - B}" class="axis"/><g clip-path="url(#plot-clip)">${sticks}${lowerSticks}<g class="peak-labels">${peakLabels}${lowerLabels}</g></g><rect id="drag-box" x="${L}" y="${T}" width="0" height="${baseline - T}" class="selection"/><text x="${(L + W - R) / 2}" y="${H - 12}" text-anchor="middle" class="axis-title mz-title">m/z</text><text transform="translate(17 ${(T + baseline) / 2}) rotate(-90)" text-anchor="middle" class="axis-title">Intensity</text>${hasLower ? `<text transform="translate(17 ${(baseline + H - B) / 2}) rotate(-90)" text-anchor="middle" class="axis-title lower-axis-title">Intensity</text>` : ""}</svg>`;
+      const plotWidth = W - L - R;
+      const plotLayer = (side, top, bottom, peaksMarkup, labelsMarkup) => {
+        const clipId = `${options ? "export-" : ""}${side}-plot-clip`;
+        return `<clipPath id="${clipId}"><rect x="${L}" y="${top}" width="${plotWidth}" height="${bottom - top}"/></clipPath><g clip-path="url(#${clipId})">${peaksMarkup}<g class="peak-labels">${labelsMarkup}</g></g>`;
+      };
+      const upperLayer = plotLayer("upper", T, baseline, sticks, peakLabels);
+      const lowerLayer = hasLower ? plotLayer("lower", baseline, H - B, lowerSticks, lowerLabels) : "";
+      const markup = `<svg id="spectrum-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="${hasLower ? "Compared mass spectra" : "Mass spectrum"}"><g class="spectrum-grid">${grid}</g><line x1="${L}" y1="${baseline}" x2="${W - R}" y2="${baseline}" class="axis"/><line x1="${L}" y1="${T}" x2="${L}" y2="${H - B}" class="axis"/>${upperLayer}${lowerLayer}<rect id="drag-box" x="${L}" y="${T}" width="0" height="${baseline - T}" class="selection"/><text x="${(L + W - R) / 2}" y="${H - 12}" text-anchor="middle" class="axis-title mz-title">m/z</text><text transform="translate(17 ${(T + baseline) / 2}) rotate(-90)" text-anchor="middle" class="axis-title">Intensity</text>${hasLower ? `<text transform="translate(17 ${(baseline + H - B) / 2}) rotate(-90)" text-anchor="middle" class="axis-title lower-axis-title">Intensity</text>` : ""}</svg>`;
       if (options) {
         const container = document.createElement("div");
         container.innerHTML = markup;
@@ -1080,47 +1124,57 @@
           y: Math.min(H - B, Math.max(T, (e.clientY - rect.top) / rect.height * H))
         };
       };
+      let start = null, pressedPeak = null, dragLower = false;
+      const box = svg.querySelector("#drag-box");
+      const zoomSelection = (e) => {
+        const end = pointer(e);
+        const endY = dragLower ? Math.max(baseline, end.y) : Math.min(baseline, end.y);
+        const zoomX = Math.abs(end.x - start.x) > 8;
+        const zoomY = Math.abs(endY - start.y) > 8;
+        const limitY = dragLower ? Math.max(start.y, endY) : Math.min(start.y, endY);
+        return { end, zoomX, zoomY, limitY };
+      };
+      const clearDrag = () => {
+        start = pressedPeak = null;
+        box.setAttribute("width", "0");
+      };
       svg.addEventListener("pointerdown", (e) => {
         const peak = e.target.closest?.("[data-peak]");
         pressedPeak = peak ? Number(peak.dataset.peak) : null;
         start = pointer(e);
-        current = { ...start };
+        dragLower = hasLower && start.y > baseline;
         svg.setPointerCapture(e.pointerId);
       });
       svg.addEventListener("pointermove", (e) => {
         if (start === null) return;
-        current = pointer(e);
-        const box = svg.querySelector("#drag-box");
-        if (box) {
-          const zoomX = Math.abs(current.x - start.x) > 8;
-          const zoomY = !hasLower && Math.abs(current.y - start.y) > 8;
-          box.setAttribute("x", String(zoomX ? Math.min(start.x, current.x) : L));
-          box.setAttribute("width", String(zoomX ? Math.abs(current.x - start.x) : W - L - R));
-          box.setAttribute("y", String(zoomY ? Math.min(start.y, current.y) : T));
-          box.setAttribute("height", String(zoomY ? Math.abs(current.y - start.y) : baseline - T));
-        }
+        const { end, zoomX, zoomY, limitY } = zoomSelection(e);
+        box.setAttribute("x", String(zoomX ? Math.min(start.x, end.x) : L));
+        box.setAttribute("width", String(zoomX ? Math.abs(end.x - start.x) : zoomY ? plotWidth : 0));
+        box.setAttribute("y", String(zoomY ? Math.min(baseline, limitY) : T));
+        box.setAttribute("height", String(zoomY ? Math.abs(limitY - baseline) : H - B - T));
       });
-      svg.addEventListener("pointerup", () => {
-        const zoomX = start !== null && current !== null && Math.abs(current.x - start.x) > 8;
-        const zoomY = !hasLower && start !== null && current !== null && Math.abs(current.y - start.y) > 8;
-        const dragged = zoomX || zoomY;
+      svg.addEventListener("pointercancel", clearDrag);
+      svg.addEventListener("pointerup", (e) => {
+        if (start === null) return;
+        const { end, zoomX, zoomY, limitY } = zoomSelection(e);
         if (zoomX) {
-          const toMz = (x) => domain[0] + (x - L) / (W - L - R) * domainWidth;
-          state.domain = [toMz(Math.min(start.x, current.x)), toMz(Math.max(start.x, current.x))];
+          const toMz = (x) => domain[0] + (x - L) / plotWidth * domainWidth;
+          state.domain = [toMz(Math.min(start.x, end.x)), toMz(Math.max(start.x, end.x))];
         }
         if (zoomY) {
-          const toIntensity = (y) => yDomain[1] - (y - T) / (baseline - T) * yDomainWidth;
-          state.yDomain = [toIntensity(Math.max(start.y, current.y)), toIntensity(Math.min(start.y, current.y))];
+          if (dragLower) {
+            state.lowerDomain = [0, (limitY - baseline) / (H - B - baseline) * lowerDomainWidth];
+          } else {
+            state.yDomain = [0, (baseline - limitY) / (baseline - T) * yDomain[1]];
+          }
         }
         const clickedPeak = pressedPeak;
-        start = current = pressedPeak = null;
-        if (dragged) draw();
+        clearDrag();
+        if (zoomX || zoomY) draw();
         else if (clickedPeak !== null) choose(clickedPeak);
         else if (state.selectedPeak !== null) {
           state.selectedPeak = null;
           draw();
-        } else {
-          svg.querySelector("#drag-box")?.setAttribute("width", "0");
         }
       });
     };
@@ -1139,6 +1193,7 @@
     const resetZoom = () => {
       state.domain = [...full];
       state.yDomain = [0, fullYMax];
+      state.lowerDomain = [0, lowerYMax];
       state.selectedPeak = null;
       draw();
     };
