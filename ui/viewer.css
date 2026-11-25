@@ -105,6 +105,9 @@ button:disabled { cursor: default; opacity: .5; }
 .page-controls { display: flex; align-items: center; gap: 7px; }
 .page-controls button { width: 30px; height: 28px; padding: 0; font-size: 18px; }
 .page-controls input { width: 54px; padding: 5px; text-align: center; }
+.page-controls input[type="number"] { appearance: textfield; }
+.page-controls input[type="number"]::-webkit-inner-spin-button,
+.page-controls input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 .status { display: grid; min-height: 75vh; place-items: center; padding: 30px; text-align: center; color: var(--muted); }
 .loading-card { width: min(520px, 80vw); }
 .loading-title { margin-bottom: 12px; color: var(--text); font-weight: 650; }
