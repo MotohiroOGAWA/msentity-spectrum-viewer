@@ -278,3 +278,24 @@ test("column context menu requests counts and the result table offers export", {
     await browser.close();
   }
 });
+
+test("metadata header clicks sort text and the context menu offers explicit numeric sorting", { skip }, async () => {
+  const { browser, page } = await openViewer();
+  try {
+    const heading = page.locator('[data-sort-column="Column_00"]');
+    const lastSort = () => page.evaluate(() =>
+      window.__trace.messages.filter(message => message.type === "page-request").at(-1).sort);
+    await heading.click();
+    assert.deepEqual(await lastSort(), [{ column: "Column_00", mode: "text", direction: "asc" }]);
+    await page.waitForFunction(() => !document.querySelector(".table-wrap").classList.contains("page-loading"));
+    await heading.click({ button: "right" });
+    assert.equal(await page.getByRole("menuitem", { name: "Sort as text (descending)" }).count(), 1);
+    assert.equal(await page.getByRole("menuitem", { name: "Sort as number (ascending)" }).count(), 1);
+    await page.getByRole("menuitem", { name: "Sort as number (descending)" }).click();
+    assert.deepEqual(await lastSort(), [{ column: "Column_00", mode: "numeric", direction: "desc" }]);
+    await heading.click();
+    assert.deepEqual(await lastSort(), [{ column: "Column_00", mode: "text", direction: "asc" }]);
+  } finally {
+    await browser.close();
+  }
+});

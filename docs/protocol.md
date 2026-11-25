@@ -121,7 +121,10 @@ matches all rows and empty OR matches none. SMARTS leaves are resolved to
 `row_ids` in place by the Host; dataset evaluation is delegated to msentity
 Core. `sort` is one
 `{"column", "direction": "asc"|"desc"}` or a list in priority order (stable;
-missing values last).
+missing values last). A dataset sort entry can include `"mode": "text"` to
+compare display text or `"mode": "numeric"` to compare finite numbers,
+including numeric text. In numeric mode, cells that cannot be converted
+sort last in either direction. Omitting `mode` preserves type-based sorting.
 
 | operator | condition fields | matches |
 |---|---|---|

@@ -416,8 +416,20 @@
     document.getElementById("show-logs")?.addEventListener("click", () => vscode.postMessage({ type: "show-logs" }));
   }
 
+  function setColumnSort(column, mode, direction) {
+    const index = rowSort.findIndex(item => item.column === column);
+    if (!direction) {
+      const current = rowSort[index];
+      direction = current?.mode === mode ? (current.direction === "asc" ? "desc" : null) : "asc";
+    }
+    if (!direction) rowSort.splice(index, 1);
+    else if (index === -1) rowSort.push({ column, mode, direction });
+    else rowSort[index] = { column, mode, direction };
+    refreshView();
+  }
+
   function openColumnHeaderMenu(event, header) {
-    if (loadingPage || !showControl("columnValueCounts")) return;
+    if (loadingPage) return;
     event.preventDefault();
     event.stopPropagation();
     document.querySelector(".column-header-menu")?.remove();
@@ -426,11 +438,31 @@
     const menu = document.createElement("div");
     menu.className = "more-actions-menu column-header-menu";
     menu.setAttribute("role", "menu");
-    const action = document.createElement("button");
-    action.className = "more-action";
-    action.setAttribute("role", "menuitem");
-    action.textContent = "Show value counts";
-    menu.append(action);
+    const addAction = (label, run) => {
+      const action = document.createElement("button");
+      action.className = "more-action";
+      action.setAttribute("role", "menuitem");
+      action.textContent = label;
+      action.addEventListener("click", () => {
+        trigger.focus();
+        run();
+      });
+      menu.append(action);
+    };
+    const column = trigger.dataset.sortColumn;
+    for (const [mode, label] of [["text", "text"], ["numeric", "number"]]) {
+      addAction(`Sort as ${label} (ascending)`, () => setColumnSort(column, mode, "asc"));
+      addAction(`Sort as ${label} (descending)`, () => setColumnSort(column, mode, "desc"));
+    }
+    if (showControl("columnValueCounts")) {
+      const divider = document.createElement("div");
+      divider.className = "more-actions-divider";
+      divider.setAttribute("role", "separator");
+      menu.append(divider);
+      addAction("Show value counts", () => vscode.postMessage({
+        type: "column-value-counts", datasetId: activeDatasetId, column, filters
+      }));
+    }
     app.append(menu);
 
     const bounds = trigger.getBoundingClientRect();
@@ -438,19 +470,23 @@
     const y = event.clientY || bounds.bottom;
     menu.style.left = `${Math.max(0, Math.min(x, window.innerWidth - menu.offsetWidth))}px`;
     menu.style.top = `${Math.max(0, Math.min(y, window.innerHeight - menu.offsetHeight))}px`;
-    menu.addEventListener("focusout", () => menu.remove());
+    const actions = [...menu.querySelectorAll("button")];
+    menu.addEventListener("focusout", e => {
+      if (!menu.contains(e.relatedTarget)) menu.remove();
+    });
     menu.addEventListener("keydown", e => {
-      if (e.key !== "Escape") return;
-      e.preventDefault();
-      e.stopPropagation();
-      trigger.focus();
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        trigger.focus();
+      } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        const step = e.key === "ArrowDown" ? 1 : -1;
+        const next = (actions.indexOf(document.activeElement) + step + actions.length) % actions.length;
+        actions[next].focus();
+      }
     });
-    action.addEventListener("click", () => {
-      trigger.focus();
-      vscode.postMessage({ type: "column-value-counts", datasetId: activeDatasetId,
-        column: trigger.dataset.sortColumn, filters });
-    });
-    action.focus();
+    actions[0].focus();
   }
 
   function render() {
@@ -551,7 +587,7 @@
         </div>
         ${metadataForm()}
         ${settingsForm()}
-        <div class="table-wrap" data-dataset-id="${esc(activeDatasetId)}"><table class="dataset-table ${hasFixedWidths ? "has-custom-widths" : ""}"${tableWidthStyle(widths, columnKeys)}><colgroup>${columnKeys.map(key => `<col data-column-key="${esc(key)}"${columnStyle(widths, key)}>`).join("")}</colgroup><thead><tr><th class="row-column" data-column-key="row">${resizeHandle("row")}Row</th><th class="spectrum-column" data-column-key="spectrum">${resizeHandle("spectrum")}Spectrum</th>${showStructureColumn ? `<th class="structure-column" data-column-key="structure">${resizeHandle("structure")}Structure</th>` : ""}${selectedColumns.map((c) => { const item = sortFor(c), key = `metadata:${c}`; return `<th data-column-key="${esc(key)}"><button class="table-sort" data-sort-column="${esc(c)}" title="Click: ascending → descending → remove sort">${esc(c)}<span>${item ? `${item.priority}${item.direction === "asc" ? "▲" : "▼"}` : ""}</span></button>${resizeHandle(key)}</th>`; }).join("")}</tr></thead><tbody>
+        <div class="table-wrap" data-dataset-id="${esc(activeDatasetId)}"><table class="dataset-table ${hasFixedWidths ? "has-custom-widths" : ""}"${tableWidthStyle(widths, columnKeys)}><colgroup>${columnKeys.map(key => `<col data-column-key="${esc(key)}"${columnStyle(widths, key)}>`).join("")}</colgroup><thead><tr><th class="row-column" data-column-key="row">${resizeHandle("row")}Row</th><th class="spectrum-column" data-column-key="spectrum">${resizeHandle("spectrum")}Spectrum</th>${showStructureColumn ? `<th class="structure-column" data-column-key="structure">${resizeHandle("structure")}Structure</th>` : ""}${selectedColumns.map((c) => { const item = sortFor(c), key = `metadata:${c}`; return `<th data-column-key="${esc(key)}"><button class="table-sort" data-sort-column="${esc(c)}" title="Click: text ascending → descending → remove sort. Right-click for sort options.">${esc(c)}<span>${item ? `${item.mode === "numeric" ? "123 · " : ""}${item.priority}${item.direction === "asc" ? "▲" : "▼"}` : ""}</span></button>${resizeHandle(key)}</th>`; }).join("")}</tr></thead><tbody>
           ${pageRows.length ? pageRows.map(({ row, index }) => { const smiles = smilesColumn ? String(row?.[smilesColumn] ?? "").trim() : ""; return `<tr class="${selectedSpectrumIndex === index ? "selected-record" : ""}"><td class="row-column">${rowOffset() + index + 1}</td><td class="spectrum-column"><button class="spectrum-button" data-spectrum-index="${index}" title="Show spectrum ${rowOffset() + index + 1}"><svg viewBox="0 0 28 22"><path d="M2 19h24M4 18V13m4 5V7m4 11v-4m4 4V3m4 15V9m4 9v-7"/></svg></button></td>${showStructureColumn ? `<td class="structure-column">${smiles ? `<button class="structure-button" data-structure-index="${index}" aria-label="View structure" title="View structure"><svg viewBox="0 0 28 24" aria-hidden="true" focusable="false"><path class="structure-edges" d="M14 3 21.8 7.5v9L14 21l-7.8-4.5v-9Z"/><g class="structure-nodes"><circle cx="14" cy="3" r="2.1"/><circle cx="21.8" cy="7.5" r="2.1"/><circle cx="21.8" cy="16.5" r="2.1"/><circle cx="14" cy="21" r="2.1"/><circle cx="6.2" cy="16.5" r="2.1"/><circle cx="6.2" cy="7.5" r="2.1"/></g></svg></button>` : ""}</td>` : ""}${selectedColumns.map((c) => `<td ${editingUnlocked ? 'tabindex="0"' : ""} data-edit-row="${index}" data-edit-column="${esc(c)}" class="${editingUnlocked ? "editable-cell" : "locked-cell"}" title="${editingUnlocked ? `Double-click or press Enter to edit: ${esc(display(row?.[c]))}` : `${viewerOptions.behavior.lockedCellCopyGesture === "leftClick" ? "Click" : "Right-click"} to copy the complete value`}">${esc(display(row?.[c]))}</td>`).join("")}</tr>`; }).join("") : `<tr><td colspan="${selectedColumns.length + 2 + (showStructureColumn ? 1 : 0)}" class="empty">No spectra match the filters.</td></tr>`}
         </tbody></table></div>
         <div class="pagination"><span>${start}–${end} of ${totalRows()}</span><div class="page-controls"><button id="prev-page" ${page() === 0 || loadingPage ? "disabled" : ""}>‹</button><span><input id="page-input" type="number" min="1" max="${pageCount()}" value="${page() + 1}" ${loadingPage ? "disabled" : ""}/> / ${pageCount()}</span><button id="next-page" ${page() >= pageCount() - 1 || loadingPage ? "disabled" : ""}>›</button></div><span>${loadingPage ? "Loading…" : `${pageSize()} rows/page`}</span></div>
@@ -737,12 +773,7 @@
     document.getElementById("clear-filters")?.addEventListener("click", () => { filters = { logic: "and", children: [] }; refreshView(); });
     document.getElementById("apply-filters")?.addEventListener("click", refreshView);
     document.querySelectorAll("[data-sort-column]").forEach((el) => el.addEventListener("click", () => {
-      const column = el.dataset.sortColumn;
-      const index = rowSort.findIndex((item) => item.column === column);
-      if (index < 0) rowSort.push({ column, direction: "asc" });
-      else if (rowSort[index].direction === "asc") rowSort[index] = { column, direction: "desc" };
-      else rowSort.splice(index, 1);
-      refreshView();
+      setColumnSort(el.dataset.sortColumn, "text");
     }));
     document.getElementById("dataset-select")?.addEventListener("click", (e) => {
       e.stopPropagation(); datasetMenuOpen = !datasetMenuOpen;
