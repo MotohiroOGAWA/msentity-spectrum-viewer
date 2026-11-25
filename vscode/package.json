@@ -107,219 +107,275 @@
         }
       ]
     },
-    "configuration": {
-      "title": "msentity Spectrum Viewer",
-      "properties": {
-        "msentitySpectrumViewer.backendPath": {
-          "type": "string",
-          "default": "",
-          "description": "Path of a msentity-viewer-backend executable to use instead of the one included in the extension (for development builds)."
-        },
-        "msentitySpectrumViewer.pageSize": {
-          "type": "number",
-          "default": 20,
-          "minimum": 1,
-          "maximum": 500,
-          "description": "Number of spectra loaded per page."
-        },
-        "msentitySpectrumViewer.copyLockedCells": {
-          "type": "boolean",
-          "default": true,
-          "description": "Allow copying a dataset cell's complete value while table editing is locked."
-        },
-        "msentitySpectrumViewer.lockedCellCopyGesture": {
-          "type": "string",
-          "enum": [
-            "rightClick",
-            "leftClick"
-          ],
-          "enumDescriptions": [
-            "Copy with a right-click.",
-            "Copy with a left-click."
-          ],
-          "default": "rightClick",
-          "description": "Mouse gesture used to copy a locked dataset cell."
-        },
-        "msentitySpectrumViewer.showCopyNotifications": {
-          "type": "boolean",
-          "default": true,
-          "description": "Show a notification after copying a locked dataset cell."
-        },
-        "msentitySpectrumViewer.loading.allowDuplicateColumns": {
-          "type": "boolean",
-          "default": false,
-          "description": "Combine duplicate MSP/MGF metadata fields instead of discarding the record. One non-empty value is unchanged; multiple values are stored as always-quoted CSV fields."
-        },
-        "msentitySpectrumViewer.loading.canonicalizeColumns": {
-          "type": "boolean",
-          "default": false,
-          "description": "Canonicalize MSP/MGF column names while loading (for example PRECURSORMZ to PrecursorMZ)."
-        },
-        "msentitySpectrumViewer.loading.canonicalizeAdductTypes": {
-          "type": "boolean",
-          "default": false,
-          "description": "Canonicalize MSP/MGF adduct values while loading (for example [M+H]1+ to [M+H]+)."
-        },
-        "msentitySpectrumViewer.loading.normalizeIntensity": {
-          "type": "boolean",
-          "default": false,
-          "description": "Normalize each MSP/MGF spectrum so its base peak has intensity 1."
-        },
-        "msentitySpectrumViewer.loading.specIdPrefix": {
-          "type": "string",
-          "default": "",
-          "description": "Optional prefix used to assign sequential SpecID values while loading."
-        },
-        "msentitySpectrumViewer.loading.inferTypes": {
-          "type": "boolean",
-          "default": false,
-          "description": "Infer numeric TSV/CSV column types while loading."
-        },
-        "msentitySpectrumViewer.loading.errorLogLevel": {
-          "type": "string",
-          "enum": [
-            "none",
-            "basic",
-            "detail"
-          ],
-          "default": "none",
-          "description": "Error logging level for skipped MSP/MGF records. The default 'none' writes no log."
-        },
-        "msentitySpectrumViewer.loading.errorLogFile": {
-          "type": "string",
-          "default": "",
-          "description": "Optional path for the MSP/MGF error log. No log is written when the error log level is 'none'."
-        },
-        "msentitySpectrumViewer.similarity.methods": {
-          "type": "array",
-          "items": {
+    "configuration": [
+      {
+        "title": "Dataset Table",
+        "order": 1,
+        "properties": {
+          "msentitySpectrumViewer.pageSize": {
+            "type": "number",
+            "default": 20,
+            "minimum": 1,
+            "maximum": 500,
+            "description": "Number of spectra loaded per page."
+          },
+          "msentitySpectrumViewer.copyLockedCells": {
+            "type": "boolean",
+            "default": true,
+            "description": "Allow copying a dataset cell's complete value while table editing is locked."
+          },
+          "msentitySpectrumViewer.lockedCellCopyGesture": {
             "type": "string",
             "enum": [
-              "cosine",
-              "reverse_cosine",
-              "modified_cosine",
+              "rightClick",
+              "leftClick"
+            ],
+            "enumDescriptions": [
+              "Copy with a right-click.",
+              "Copy with a left-click."
+            ],
+            "default": "rightClick",
+            "description": "Mouse gesture used to copy a locked dataset cell."
+          },
+          "msentitySpectrumViewer.showCopyNotifications": {
+            "type": "boolean",
+            "default": true,
+            "description": "Show a notification after copying a locked dataset cell."
+          }
+        }
+      },
+      {
+        "title": "Value Counts",
+        "order": 2,
+        "properties": {
+          "msentitySpectrumViewer.valueCountsViewMode": {
+            "type": "string",
+            "order": 1,
+            "enum": [
+              "scroll",
+              "pages"
+            ],
+            "enumItemLabels": [
+              "Scroll through all rows",
+              "Split into pages"
+            ],
+            "default": "scroll",
+            "description": "Choose how to browse the value counts table."
+          },
+          "msentitySpectrumViewer.valueCountsPageSize": {
+            "type": "integer",
+            "order": 2,
+            "default": 100,
+            "minimum": 1,
+            "maximum": 5000,
+            "markdownDescription": "Rows per page in the value counts table. Applies when **Split into pages** is selected."
+          }
+        }
+      },
+      {
+        "title": "File Loading",
+        "order": 3,
+        "properties": {
+          "msentitySpectrumViewer.loading.allowDuplicateColumns": {
+            "type": "boolean",
+            "default": false,
+            "description": "Combine duplicate MSP/MGF metadata fields instead of discarding the record. One non-empty value is unchanged; multiple values are stored as always-quoted CSV fields."
+          },
+          "msentitySpectrumViewer.loading.canonicalizeColumns": {
+            "type": "boolean",
+            "default": false,
+            "description": "Canonicalize MSP/MGF column names while loading (for example PRECURSORMZ to PrecursorMZ)."
+          },
+          "msentitySpectrumViewer.loading.canonicalizeAdductTypes": {
+            "type": "boolean",
+            "default": false,
+            "description": "Canonicalize MSP/MGF adduct values while loading (for example [M+H]1+ to [M+H]+)."
+          },
+          "msentitySpectrumViewer.loading.normalizeIntensity": {
+            "type": "boolean",
+            "default": false,
+            "description": "Normalize each MSP/MGF spectrum so its base peak has intensity 1."
+          },
+          "msentitySpectrumViewer.loading.specIdPrefix": {
+            "type": "string",
+            "default": "",
+            "description": "Optional prefix used to assign sequential SpecID values while loading."
+          },
+          "msentitySpectrumViewer.loading.inferTypes": {
+            "type": "boolean",
+            "default": false,
+            "description": "Infer numeric TSV/CSV column types while loading."
+          },
+          "msentitySpectrumViewer.loading.errorLogLevel": {
+            "type": "string",
+            "enum": [
+              "none",
+              "basic",
+              "detail"
+            ],
+            "default": "none",
+            "description": "Error logging level for skipped MSP/MGF records. The default 'none' writes no log."
+          },
+          "msentitySpectrumViewer.loading.errorLogFile": {
+            "type": "string",
+            "default": "",
+            "description": "Optional path for the MSP/MGF error log. No log is written when the error log level is 'none'."
+          }
+        }
+      },
+      {
+        "title": "Similarity Calculation",
+        "order": 4,
+        "properties": {
+          "msentitySpectrumViewer.similarity.methods": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "cosine",
+                "reverse_cosine",
+                "modified_cosine",
+                "bonanza"
+              ],
+              "enumDescriptions": [
+                "Normalize all peaks in both spectra",
+                "Ignore unmatched query peaks in the query norm",
+                "Also match peaks shifted by the precursor m/z difference (needs a precursor m/z)",
+                "Sum-normalized shared intensity over shared plus unmatched intensity, with precursor-shifted matches (needs a precursor m/z)"
+              ]
+            },
+            "uniqueItems": true,
+            "minItems": 1,
+            "default": [
+              "cosine"
+            ],
+            "description": "Default methods of Calculate Similarity; the result has one score column per method. The precursor m/z of modified_cosine and bonanza is read from msentitySpectrumViewer.spectrumComparison.precursorColumn (or detected)."
+          },
+          "msentitySpectrumViewer.similarity.threshold": {
+            "type": "number",
+            "default": 0.8,
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Default score threshold of a library search: only matches at or above it are saved."
+          },
+          "msentitySpectrumViewer.similarity.intensityExponent": {
+            "type": "number",
+            "default": 1,
+            "exclusiveMinimum": 0,
+            "description": "Default intensity exponent: intensities are raised to this power before scoring (0.5 = square root). Also the initial exponent when two spectra are compared in the Mass Spectrum view."
+          },
+          "msentitySpectrumViewer.similarity.includeMatchedData": {
+            "type": "boolean",
+            "default": true,
+            "description": "Store the matched spectra and their metadata in the result by default (otherwise a lightweight result with indices and scores only)."
+          },
+          "msentitySpectrumViewer.similarity.threads": {
+            "type": "integer",
+            "default": 1,
+            "minimum": 1,
+            "description": "Initial worker threads of a similarity calculation (can be changed in the Calculate similarity form). At most the number of logical cores minus one is used, so one core is always left free."
+          }
+        }
+      },
+      {
+        "title": "Spectrum Comparison",
+        "order": 5,
+        "properties": {
+          "msentitySpectrumViewer.spectrumComparison.method": {
+            "type": "string",
+            "enum": [
+              "dot",
+              "reverse",
+              "modified",
               "bonanza"
             ],
             "enumDescriptions": [
-              "Normalize all peaks in both spectra",
-              "Ignore unmatched query peaks in the query norm",
-              "Also match peaks shifted by the precursor m/z difference (needs a precursor m/z)",
-              "Sum-normalized shared intensity over shared plus unmatched intensity, with precursor-shifted matches (needs a precursor m/z)"
-            ]
+              "Dot product",
+              "Reverse dot product",
+              "Modified dot product (also matches precursor-shifted peaks)",
+              "BONANZA score"
+            ],
+            "default": "dot",
+            "description": "Initial score method when two spectra are compared in the Mass Spectrum view."
           },
-          "uniqueItems": true,
-          "minItems": 1,
-          "default": [
-            "cosine"
-          ],
-          "description": "Default methods of Calculate Similarity; the result has one score column per method. The precursor m/z of modified_cosine and bonanza is read from msentitySpectrumViewer.spectrumComparison.precursorColumn (or detected)."
-        },
-        "msentitySpectrumViewer.similarity.threshold": {
-          "type": "number",
-          "default": 0.8,
-          "minimum": 0,
-          "maximum": 1,
-          "description": "Default score threshold of a library search: only matches at or above it are saved."
-        },
-        "msentitySpectrumViewer.similarity.intensityExponent": {
-          "type": "number",
-          "default": 1,
-          "exclusiveMinimum": 0,
-          "description": "Default intensity exponent: intensities are raised to this power before scoring (0.5 = square root). Also the initial exponent when two spectra are compared in the Mass Spectrum view."
-        },
-        "msentitySpectrumViewer.similarity.includeMatchedData": {
-          "type": "boolean",
-          "default": true,
-          "description": "Store the matched spectra and their metadata in the result by default (otherwise a lightweight result with indices and scores only)."
-        },
-        "msentitySpectrumViewer.similarity.threads": {
-          "type": "integer",
-          "default": 1,
-          "minimum": 1,
-          "description": "Initial worker threads of a similarity calculation (can be changed in the Calculate similarity form). At most the number of logical cores minus one is used, so one core is always left free."
-        },
-        "msentitySpectrumViewer.spectrumComparison.method": {
-          "type": "string",
-          "enum": [
-            "dot",
-            "reverse",
-            "modified",
-            "bonanza"
-          ],
-          "enumDescriptions": [
-            "Dot product",
-            "Reverse dot product",
-            "Modified dot product (also matches precursor-shifted peaks)",
-            "BONANZA score"
-          ],
-          "default": "dot",
-          "description": "Initial score method when two spectra are compared in the Mass Spectrum view."
-        },
-        "msentitySpectrumViewer.spectrumComparison.toleranceUnit": {
-          "type": "string",
-          "enum": [
-            "Da",
-            "ppm",
-            "Da or ppm"
-          ],
-          "enumDescriptions": [
-            "Peaks match within ± toleranceDa",
-            "Peaks match within ± tolerancePpm of their mean m/z",
-            "Peaks match within ± toleranceDa or ± tolerancePpm, whichever is larger"
-          ],
-          "default": "Da or ppm",
-          "description": "Initial unit of the m/z tolerance when two spectra are compared in the Mass Spectrum view and in the Calculate similarity form. The unit can also be switched there."
-        },
-        "msentitySpectrumViewer.spectrumComparison.toleranceDa": {
-          "type": "number",
-          "default": 0.01,
-          "exclusiveMinimum": 0,
-          "maximum": 10,
-          "description": "Initial m/z tolerance (± Da) when two spectra are compared in the Mass Spectrum view and in the Calculate similarity form; used when the unit is Da or Da or ppm."
-        },
-        "msentitySpectrumViewer.spectrumComparison.tolerancePpm": {
-          "type": "number",
-          "default": 10,
-          "exclusiveMinimum": 0,
-          "maximum": 1000,
-          "description": "Initial m/z tolerance (± ppm of the mean m/z of two peaks) when two spectra are compared in the Mass Spectrum view and in the Calculate similarity form; used when the unit is ppm or Da or ppm."
-        },
-        "msentitySpectrumViewer.spectrumComparison.precursorColumn": {
-          "type": "string",
-          "default": "",
-          "markdownDescription": "Metadata column holding the precursor m/z of compared spectra (column names are compared case-insensitively; the first number of the value is used). Leave empty to detect it automatically: the first of PrecursorMZ, precursor_mz, PEPMASS, and ParentMZ that has a positive number. Modified dot product and BONANZA need a precursor m/z on both spectra and are unavailable otherwise."
-        },
-        "msentitySpectrumViewer.spectrumFloatingWindow": {
-          "type": "boolean",
-          "default": true,
-          "description": "Open the reusable Mass Spectrum editor in a separate VS Code floating window. If disabled, it opens beside the dataset table."
-        },
-        "msentitySpectrumViewer.structureSmilesColumn": {
-          "type": "string",
-          "default": "SMILES",
-          "description": "Preferred metadata column containing SMILES for Structure previews. Matching is case-insensitive; known SMILES column names are used as fallbacks when this column is absent."
-        },
-        "msentitySpectrumViewer.showStructureColumn": {
-          "type": "boolean",
-          "default": true,
-          "description": "Show the Structure column when a SMILES column exists. Structures are drawn by RDKit, which is included in the extension."
-        },
-        "msentitySpectrumViewer.structurePreviewWidth": {
-          "type": "number",
-          "default": 560,
-          "minimum": 200,
-          "maximum": 1200,
-          "description": "Width in pixels used to render Structure preview SVGs."
-        },
-        "msentitySpectrumViewer.structurePreviewHeight": {
-          "type": "number",
-          "default": 400,
-          "minimum": 200,
-          "maximum": 1200,
-          "description": "Height in pixels used to render Structure preview SVGs."
+          "msentitySpectrumViewer.spectrumComparison.toleranceUnit": {
+            "type": "string",
+            "enum": [
+              "Da",
+              "ppm",
+              "Da or ppm"
+            ],
+            "enumDescriptions": [
+              "Peaks match within ± toleranceDa",
+              "Peaks match within ± tolerancePpm of their mean m/z",
+              "Peaks match within ± toleranceDa or ± tolerancePpm, whichever is larger"
+            ],
+            "default": "Da or ppm",
+            "description": "Initial unit of the m/z tolerance when two spectra are compared in the Mass Spectrum view and in the Calculate similarity form. The unit can also be switched there."
+          },
+          "msentitySpectrumViewer.spectrumComparison.toleranceDa": {
+            "type": "number",
+            "default": 0.01,
+            "exclusiveMinimum": 0,
+            "maximum": 10,
+            "description": "Initial m/z tolerance (± Da) when two spectra are compared in the Mass Spectrum view and in the Calculate similarity form; used when the unit is Da or Da or ppm."
+          },
+          "msentitySpectrumViewer.spectrumComparison.tolerancePpm": {
+            "type": "number",
+            "default": 10,
+            "exclusiveMinimum": 0,
+            "maximum": 1000,
+            "description": "Initial m/z tolerance (± ppm of the mean m/z of two peaks) when two spectra are compared in the Mass Spectrum view and in the Calculate similarity form; used when the unit is ppm or Da or ppm."
+          },
+          "msentitySpectrumViewer.spectrumComparison.precursorColumn": {
+            "type": "string",
+            "default": "",
+            "markdownDescription": "Metadata column holding the precursor m/z of compared spectra (column names are compared case-insensitively; the first number of the value is used). Leave empty to detect it automatically: the first of PrecursorMZ, precursor_mz, PEPMASS, and ParentMZ that has a positive number. Modified dot product and BONANZA need a precursor m/z on both spectra and are unavailable otherwise."
+          }
+        }
+      },
+      {
+        "title": "Spectrum Viewer",
+        "order": 6,
+        "properties": {
+          "msentitySpectrumViewer.spectrumFloatingWindow": {
+            "type": "boolean",
+            "default": true,
+            "description": "Open the reusable Mass Spectrum editor in a separate VS Code floating window. If disabled, it opens beside the dataset table."
+          }
+        }
+      },
+      {
+        "title": "Structure Preview",
+        "order": 7,
+        "properties": {
+          "msentitySpectrumViewer.structureSmilesColumn": {
+            "type": "string",
+            "default": "SMILES",
+            "description": "Preferred metadata column containing SMILES for Structure previews. Matching is case-insensitive; known SMILES column names are used as fallbacks when this column is absent."
+          },
+          "msentitySpectrumViewer.showStructureColumn": {
+            "type": "boolean",
+            "default": true,
+            "description": "Show the Structure column when a SMILES column exists. Structures are drawn by RDKit, which is included in the extension."
+          },
+          "msentitySpectrumViewer.structurePreviewWidth": {
+            "type": "number",
+            "default": 560,
+            "minimum": 200,
+            "maximum": 1200,
+            "description": "Width in pixels used to render Structure preview SVGs."
+          },
+          "msentitySpectrumViewer.structurePreviewHeight": {
+            "type": "number",
+            "default": 400,
+            "minimum": 200,
+            "maximum": 1200,
+            "description": "Height in pixels used to render Structure preview SVGs."
+          }
         }
       }
-    }
+    ]
   },
   "scripts": {
     "package": "node scripts/package-vsix.js",

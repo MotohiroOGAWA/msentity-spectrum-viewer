@@ -25,6 +25,16 @@ docs/                           protocol and embedding guides
                                                               └──▶ host/chemistry (RDKit WebAssembly, worker thread)
 ```
 
+Right-click a metadata column header and choose **Show value counts** to open
+a separate tab with the distinct values and their counts. The tab captures the
+current dataset and filters, including in-memory edits, across all matching
+rows. The tab scrolls through the whole summary by default. Click **Settings**
+in the tab to open the **Value Counts** settings. Set
+`msentitySpectrumViewer.valueCountsViewMode` to `pages` to enable pagination and
+use `msentitySpectrumViewer.valueCountsPageSize` to set the number of rows per
+page (100 by default). In paginated mode, enter a page number and press Enter
+to jump to it. Use **Export CSV / TSV** in the tab to save the full summary.
+
 ## Documentation
 
 * [vscode/README.md](vscode/README.md) — using the extension
@@ -56,8 +66,8 @@ npm test                                         # backend protocol, host librar
 
 Open the repository in VS Code and start **Run Extension** (F5). The extension
 in `vscode/` finds the UI and host one directory up and the backend in
-`build/backend/`; `msentitySpectrumViewer.backendPath` or the environment
-variable `MSENTITY_VIEWER_BACKEND` selects another backend.
+`build/backend/`. For development, the environment variable
+`MSENTITY_VIEWER_BACKEND` selects another backend.
 
 ## Packaging
 

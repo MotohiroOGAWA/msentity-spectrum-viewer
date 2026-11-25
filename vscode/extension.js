@@ -162,14 +162,12 @@ function loadHost(context) {
   return require(path.join(resourceDir(context, "host"), "index.js"));
 }
 
-// The backend executable: msentitySpectrumViewer.backendPath, else
-// MSENTITY_VIEWER_BACKEND, else bin/<platform>/ of the package, else the
+// The backend executable: MSENTITY_VIEWER_BACKEND, else
+// bin/<platform>/ of the package, else the
 // repository build (build/backend/).
 function resolveBackendExecutable(context, host) {
-  const config = vscode.workspace.getConfiguration("msentitySpectrumViewer");
   return host.findBackendExecutable({
     roots: [context.extensionPath, path.join(context.extensionPath, "..")],
-    override: String(config.get("backendPath", "") || "").trim(),
   });
 }
 
@@ -240,7 +238,7 @@ class MSEntityViewerProvider {
       webview.postMessage({
         type: "error",
         title: "Viewer backend not found",
-        message: "msentity-viewer-backend is not part of this installation. Install the extension package for your platform, or set msentitySpectrumViewer.backendPath."
+        message: "msentity-viewer-backend is not part of this installation. Install the extension package for your platform."
       });
       return;
     }
@@ -255,6 +253,12 @@ class MSEntityViewerProvider {
     // Datasets of the last similarity-options, which similarity-submit chooses from.
     let similarityDatasets = [];
     const onBackendMessage = (message) => {
+      if (message.type === "column-value-counts") {
+        if (disposed) return;
+        if (message.error) vscode.window.showErrorMessage(`Could not count column values: ${message.error}`);
+        else this.showValueCounts(document.uri, message);
+        return;
+      }
       if (message.type === "similarity-options") {
         // The Calculate similarity form (ui/viewer.js) starts from the configured defaults.
         similarityDatasets = Array.isArray(message.datasets) ? message.datasets : [];
@@ -285,7 +289,7 @@ class MSEntityViewerProvider {
       send({
         type: "error",
         title: "Could not start the viewer backend",
-        message: `${error.message}\n\nCheck msentitySpectrumViewer.backendPath or reinstall the extension.`
+        message: `${error.message}\n\nCheck the viewer logs or reinstall the extension.`
       });
     });
     backend.on("exit", (code, signal) => {
@@ -332,6 +336,12 @@ class MSEntityViewerProvider {
             filters: message.filters, sort: message.sort, columns: message.columns, bins: message.bins,
             score: message.score, ...configuredStructureOptions()
           });
+          break;
+        case "column-value-counts":
+          if (!isSimilarity && typeof message.column === "string") {
+            writeRequest({ type: message.type, dataset_id: message.datasetId,
+              column: message.column, filters: message.filters });
+          }
           break;
         case "render-structure":
           writeRequest({ type: "render-structure", smiles: message.smiles,
@@ -796,21 +806,69 @@ class MSEntityViewerProvider {
     return target.fsPath;
   }
 
-  async savePeaks(documentUri, message) {
+  showValueCounts(documentUri, result) {
+    const uiDir = resourceDir(this.context, "ui");
+    const panel = vscode.window.createWebviewPanel(
+      "msentity.valueCounts", `Value counts · ${result.column}`, vscode.ViewColumn.Active,
+      { enableScripts: true, localResourceRoots: [vscode.Uri.file(uiDir)] }
+    );
+    panel.iconPath = this.iconPath;
+    const settings = () => {
+      const config = vscode.workspace.getConfiguration("msentitySpectrumViewer", documentUri);
+      return { mode: config.get("valueCountsViewMode", "scroll"), pageSize: config.get("valueCountsPageSize", 100) };
+    };
+    const configListener = vscode.workspace.onDidChangeConfiguration(event => {
+      if (["valueCountsViewMode", "valueCountsPageSize"].some(key =>
+        event.affectsConfiguration(`msentitySpectrumViewer.${key}`, documentUri))) {
+        panel.webview.postMessage({ type: "value-counts-settings", settings: settings() });
+      }
+    });
+    const listener = panel.webview.onDidReceiveMessage(async message => {
+      if (message?.type === "webview-ready") {
+        await panel.webview.postMessage({ ...result, settings: settings() });
+      } else if (message?.type === "open-value-counts-settings") {
+        const { publisher, name } = this.context.extension.packageJSON;
+        await vscode.commands.executeCommand("workbench.action.openSettings", `@ext:${publisher}.${name} value counts`);
+      } else if (message?.type === "save-value-counts") {
+        try {
+          await this.saveDelimitedTable(documentUri, {
+            basename: `${result.dataset_name}-${result.column}-counts`.replace(/\./g, "_"),
+            sourcePath: result.dataset_path,
+            title: "Save value counts",
+            content: format => formatValueCounts(result, format)
+          });
+        } catch (error) {
+          vscode.window.showErrorMessage(`Could not save value counts: ${error.message}`);
+        }
+      }
+    });
+    panel.onDidDispose(() => {
+      listener.dispose();
+      configListener.dispose();
+    });
+    panel.webview.html = getDatasetWebviewHtml(panel.webview, uiDir, documentUri, false, "value-counts");
+  }
+
+  savePeaks(documentUri, message) {
+    return this.saveDelimitedTable(documentUri, {
+      basename: message?.basename || "spectrum",
+      sourcePath: message?.sourcePath,
+      title: "Save spectrum peaks",
+      content: format => message?.contents?.[format]
+    });
+  }
+
+  async saveDelimitedTable(documentUri, { basename, sourcePath, title, content }) {
     const formats = {
       tsv: { label: "TSV", description: "Tab-separated values", filter: "Tab-separated values" },
       csv: { label: "CSV", description: "Comma-separated values", filter: "Comma-separated values" }
     };
     const selected = await vscode.window.showQuickPick(
       Object.entries(formats).map(([format, details]) => ({ ...details, format })),
-      { title: "Save spectrum peaks", placeHolder: "Choose the output format" }
+      { title, placeHolder: "Choose the output format" }
     );
     if (!selected) return null;
-    const content = message?.contents?.[selected.format];
-    if (typeof content !== "string") throw new Error(`Peak ${selected.label} data is unavailable.`);
-    const basename = String(message?.basename || "spectrum").replace(/[^\w.-]+/g, "_");
-    const filename = `${basename.replace(/\.(?:tsv|csv)$/i, "")}.${selected.format}`;
-    const sourcePath = String(message?.sourcePath || "");
+    const filename = `${String(basename).replace(/[^\w.-]+/g, "_").replace(/\.(?:tsv|csv)$/i, "")}.${selected.format}`;
     const sourceUri = sourcePath ? vscode.Uri.file(sourcePath) : documentUri;
     const target = await vscode.window.showSaveDialog({
       defaultUri: vscode.Uri.joinPath(sourceUri, "..", filename),
@@ -824,7 +882,9 @@ class MSEntityViewerProvider {
         ? `${target.fsPath.slice(0, -chosenExtension.length)}.${selected.format}`
         : `${target.fsPath}.${selected.format}`;
     const outputUri = outputPath === target.fsPath ? target : vscode.Uri.file(outputPath);
-    await vscode.workspace.fs.writeFile(outputUri, Buffer.from(content, "utf8"));
+    const data = content(selected.format);
+    if (typeof data !== "string") throw new Error(`${selected.label} data is unavailable.`);
+    await vscode.workspace.fs.writeFile(outputUri, Buffer.from(data, "utf8"));
     vscode.window.showInformationMessage(`Saved ${path.basename(outputPath)}`);
     return outputPath;
   }
@@ -847,8 +907,20 @@ class MSEntityViewerProvider {
   }
 }
 
-function getDatasetWebviewHtml(webview, uiDir, documentUri, isSimilarity = false) {
-  const scriptUri = webview.asWebviewUri(vscode.Uri.file(path.join(uiDir, isSimilarity ? "similarity.js" : "viewer.js")));
+function formatValueCounts({ column, rows }, format) {
+  const delimiter = format === "csv" ? "," : "\t";
+  const encode = value => {
+    if (value == null) return "";
+    const text = typeof value === "object" ? JSON.stringify(value) : String(value);
+    return text === "" || text.includes(delimiter) || /["\r\n]/.test(text)
+      ? `"${text.replace(/"/g, '""')}"` : text;
+  };
+  const header = [column, column === "Count" ? "Occurrences" : "Count"].map(encode).join(delimiter);
+  return [header, ...rows.map(({ value, count }) => `${encode(value)}${delimiter}${count}`)].join("\r\n") + "\r\n";
+}
+
+function getDatasetWebviewHtml(webview, uiDir, documentUri, isSimilarity = false, component) {
+  const scriptUri = webview.asWebviewUri(vscode.Uri.file(path.join(uiDir, component ? `${component}.js` : isSimilarity ? "similarity.js" : "viewer.js")));
   const styleUri = webview.asWebviewUri(vscode.Uri.file(path.join(uiDir, isSimilarity ? "similarity.css" : "viewer.css")));
   const nonce = crypto.randomBytes(16).toString("base64");
   const filename = path.basename(documentUri.fsPath).replace(/[&<>"']/g, (c) => ({

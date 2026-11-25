@@ -36,7 +36,7 @@ test("defaults, overrides, and validation", () => {
 
 test("VS Code setting defaults equal SIMILARITY_DEFAULTS", () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, "../../vscode/package.json"), "utf8"));
-  const properties = manifest.contributes.configuration.properties;
+  const properties = manifest.contributes.configuration.find(group => group.title === "Similarity Calculation").properties;
   const settings = {
     methods: "methods", threshold: "threshold",
     intensity_exponent: "intensityExponent",
@@ -92,7 +92,7 @@ test("spectrum comparison defaults", () => {
   assert.throws(() => comparisonSettings({ tolerance_unit: "mDa" }), /tolerance_unit/);
   assert.throws(() => comparisonSettings({ method: "cosine" }), /method/);
   const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, "../../vscode/package.json"), "utf8"));
-  const properties = manifest.contributes.configuration.properties;
+  const properties = manifest.contributes.configuration.find(group => group.title === "Spectrum Comparison").properties;
   assert.equal(properties["msentitySpectrumViewer.spectrumComparison.method"].default, COMPARISON_DEFAULTS.method);
   assert.equal(properties["msentitySpectrumViewer.spectrumComparison.toleranceUnit"].default, COMPARISON_DEFAULTS.tolerance_unit);
   assert.equal(properties["msentitySpectrumViewer.spectrumComparison.toleranceDa"].default, COMPARISON_DEFAULTS.tolerance_da);

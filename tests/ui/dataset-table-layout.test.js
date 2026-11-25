@@ -30,16 +30,16 @@ test("column widths are resizable, retained per dataset, and cleared by reload",
 });
 
 test("automatic widths are frozen after the first loaded page", () => {
-  assert.match(script, /function freezeAutomaticColumnWidths\(\)/);
+  assert.match(script, /function applyColumnWidths\(\)/);
   assert.match(script, /getBoundingClientRect\(\)\.width/);
-  assert.match(script, /freezeAutomaticColumnWidths\(\);\s*restoreTableView\(\)/);
+  assert.match(script, /applyColumnWidths\(\);\s*restoreTableView\(\)/);
   assert.match(script, /resettingColumnWidths\.add\(activeDatasetId\)/);
   assert.match(script, /dataset-page[\s\S]{0,240}resettingColumnWidths\.delete\(activeDatasetId\)/);
 });
 
 test("fixed columns render with a fixed total table width without an automatic-layout frame", () => {
-  assert.match(script, /const tableWidthStyle =/);
-  assert.match(script, /style="width:\$\{width\}px;min-width:\$\{width\}px"/);
+  assert.match(script, /fixTableWidth\(table, widths, keys\)/);
+  assert.match(script, /table\.style\.width = table\.style\.minWidth/);
   assert.match(script, /fixTableWidth\(table, currentWidths/);
   assert.doesNotMatch(styles, /\.dataset-table\.has-custom-widths[^}]*max-content/);
 });

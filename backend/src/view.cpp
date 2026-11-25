@@ -149,7 +149,19 @@ MSDataset apply_dataset_view(const MSDataset& dataset, const json& filters, cons
     std::string column = json_text(item.value("column", json("")));
     if (!has(column) || std::find(used.begin(), used.end(), column) != used.end()) continue;
     used.push_back(column);
-    keys.push_back(view.column_values(column));
+    auto values = view.column_values(column);
+    const auto mode = json_text(item.value("mode", json("")));
+    if (mode == "text") {
+      for (auto& value : values) {
+        if (!is_missing(value)) value = display_text(value);
+      }
+    } else if (mode == "numeric") {
+      for (auto& value : values) {
+        const auto number = numeric_value(value);
+        value = number && std::isfinite(*number) ? Value(*number) : Value(std::monostate{});
+      }
+    }
+    keys.push_back(std::move(values));
     ascending.push_back(json_text(item.value("direction", json("asc"))) != "desc");
   }
   if (!keys.empty()) {

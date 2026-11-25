@@ -18,6 +18,12 @@ async function openViewer(options = {}) {
   await page.addInitScript(() => {});
   await page.evaluate(viewerOptions => {
     window.msentityViewerOptions = viewerOptions;
+    if (viewerOptions.blockInlineStyles) {
+      const csp = document.createElement("meta");
+      csp.httpEquiv = "Content-Security-Policy";
+      csp.content = "style-src-attr 'none'";
+      document.head.append(csp);
+    }
     window.__trace = { messages: [], scrollTo: [], raf: 0, mutations: 0, appReplacements: 0, copied: [] };
     const innerHTML = Object.getOwnPropertyDescriptor(Element.prototype, "innerHTML");
     Object.defineProperty(Element.prototype, "innerHTML", { configurable: true,
@@ -39,7 +45,11 @@ async function openViewer(options = {}) {
       postMessage(message) {
         window.__trace.messages.push(message);
         if (message.type === "webview-ready") setTimeout(() => window.postMessage({ type: "backend-ready", dataset: { id: "dataset", name: "dataset" } }, "*"));
-        if (message.type === "ready" || message.type === "page-request") setTimeout(() => window.postMessage({ type: "dataset-page", value }, "*"));
+        if (message.type === "ready" || message.type === "page-request") {
+          const reply = () => window.postMessage({ type: "dataset-page", value }, "*");
+          if (message.type === "page-request" && viewerOptions.holdPageReply) window.replyToPageRequest = reply;
+          else setTimeout(reply);
+        }
         if (message.type === "edit-cell") setTimeout(() => window.postMessage({ type: "metadata-updated",
           dataset_id: message.datasetId, row_id: message.rowId, column: message.column, value: `${message.value}_edited` }, "*"));
       }
@@ -193,4 +203,137 @@ test("column resize preserves table DOM and viewport without correction frames",
     assert.equal(after.trace.raf, before.trace.raf);
     assert.ok(after.widths[14] < before.widths[14]);
   } finally { await browser.close(); }
+});
+
+test("column context menu requests counts and the result table offers export", { skip }, async () => {
+  const { browser, page } = await openViewer();
+  try {
+    const heading = page.locator('[data-sort-column="Column_00"]');
+    await heading.click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Show value counts" }).click();
+    const request = await page.evaluate(() => window.__trace.messages.at(-1));
+    assert.equal(request.type, "column-value-counts");
+    assert.equal(request.datasetId, "dataset");
+    assert.equal(request.column, "Column_00");
+
+    const result = await browser.newPage();
+    await result.setContent('<div id="app"></div>');
+    await result.addStyleTag({ path: path.join(ROOT, "ui/viewer.css") });
+    await result.evaluate(() => {
+      window.acquireVsCodeApi = () => ({ postMessage(message) { window.lastRequest = message; } });
+    });
+    await result.addScriptTag({ path: path.join(ROOT, "ui/value-counts.js") });
+    await result.evaluate(() => window.postMessage({
+      type: "column-value-counts", column: "Column_00", dataset_name: "dataset",
+      rows: [{ value: "<unique>", count: 2 },
+        ...Array.from({ length: 100 }, (_, index) => ({ value: `value ${index}`, count: 1 }))],
+      total_rows: 102
+    }, "*"));
+    await result.getByRole("cell", { name: "value 99", exact: true }).waitFor();
+    assert.equal(await result.getByRole("button", { name: "Next page" }).count(), 0);
+    const cells = await result.getByRole("row").nth(1).getByRole("cell").allTextContents();
+    assert.deepEqual(cells, ["<unique>", "2"]);
+
+    const widths = () => result.getByRole("columnheader").evaluateAll(headers =>
+      headers.map(header => header.getBoundingClientRect().width));
+    const initial = await widths();
+    assert.ok(initial[0] + initial[1] < 300, `Unexpected initial widths: ${initial}`);
+    const valueHeading = result.locator('[data-counts-sort="value"]');
+    for (let click = 0; click < 3; click++) {
+      await valueHeading.click();
+      assert.deepEqual(await widths(), initial);
+    }
+    for (const index of [0, 1]) {
+      const handle = await result.locator(".column-resize-handle").nth(index).boundingBox();
+      const x = handle.x + handle.width / 2;
+      const y = handle.y + handle.height / 2;
+      await result.mouse.move(x, y);
+      await result.mouse.down();
+      await result.mouse.move(x + 50, y, { steps: 3 });
+      await result.mouse.up();
+    }
+    const resized = await widths();
+    assert.deepEqual(resized, initial.map(width => Math.round(width) + 50));
+    await result.evaluate(() => window.postMessage({
+      type: "value-counts-settings", settings: { mode: "pages", pageSize: 25 }
+    }, "*"));
+    const pageInput = result.getByRole("spinbutton", { name: "Page number" });
+    assert.equal(await pageInput.getAttribute("max"), "5");
+    assert.equal(await result.locator("tbody tr").count(), 25);
+    await result.getByRole("button", { name: "Next page" }).click();
+    assert.equal(await pageInput.inputValue(), "2");
+    await pageInput.fill("5");
+    await pageInput.press("Enter");
+    assert.equal(await pageInput.inputValue(), "5");
+    assert.equal(await result.locator("tbody tr").count(), 1);
+    assert.deepEqual(await widths(), resized);
+
+    const countSort = result.locator('[data-counts-sort="count"]');
+    const valueSort = result.locator('[data-counts-sort="value"]');
+    const firstValue = () => result.locator("tbody td").first().textContent();
+    await countSort.click();
+    assert.equal(await pageInput.inputValue(), "1");
+    assert.equal(await firstValue(), "value 0");
+    await valueSort.click();
+    assert.match(await valueSort.getAttribute("aria-label"), /ascending, priority 2/);
+    await valueSort.click();
+    assert.equal(await firstValue(), "value 99");
+    await countSort.click();
+    assert.equal(await firstValue(), "<unique>");
+    await countSort.click();
+    assert.match(await valueSort.getAttribute("aria-label"), /descending, priority 1/);
+    await valueSort.click();
+    assert.equal(await firstValue(), "<unique>");
+
+    await result.getByRole("button", { name: "Settings" }).click();
+    assert.deepEqual(await result.evaluate(() => window.lastRequest), { type: "open-value-counts-settings" });
+    await result.getByRole("button", { name: "Export CSV / TSV" }).click();
+    assert.deepEqual(await result.evaluate(() => window.lastRequest), { type: "save-value-counts" });
+  } finally {
+    await browser.close();
+  }
+});
+
+test("metadata header clicks sort text and the context menu offers explicit numeric sorting", { skip }, async () => {
+  const { browser, page } = await openViewer();
+  try {
+    const heading = page.locator('[data-sort-column="Column_00"]');
+    const lastSort = () => page.evaluate(() =>
+      window.__trace.messages.filter(message => message.type === "page-request").at(-1).sort);
+    await heading.click();
+    assert.deepEqual(await lastSort(), [{ column: "Column_00", mode: "text", direction: "asc" }]);
+    await page.waitForFunction(() => !document.querySelector(".table-wrap").classList.contains("page-loading"));
+    await heading.click({ button: "right" });
+    assert.equal(await page.getByRole("menuitem", { name: "Sort as text (descending)" }).count(), 1);
+    assert.equal(await page.getByRole("menuitem", { name: "Sort as number (ascending)" }).count(), 1);
+    await page.getByRole("menuitem", { name: "Sort as number (descending)" }).click();
+    assert.deepEqual(await lastSort(), [{ column: "Column_00", mode: "numeric", direction: "desc" }]);
+    await heading.click();
+    assert.deepEqual(await lastSort(), [{ column: "Column_00", mode: "text", direction: "asc" }]);
+  } finally {
+    await browser.close();
+  }
+});
+
+
+test("metadata sorting preserves column widths and horizontal scroll while the backend responds", { skip }, async () => {
+  const { browser, page } = await openViewer({ blockInlineStyles: true, holdPageReply: true });
+  try {
+    const heading = page.locator('[data-sort-column="Column_10"]');
+    await heading.scrollIntoViewIfNeeded();
+    const layout = () => page.locator(".table-wrap").evaluate(wrap => ({
+      scrollLeft: wrap.scrollLeft,
+      widths: [...wrap.querySelectorAll("th")].map(th => th.getBoundingClientRect().width),
+    }));
+    const original = await layout();
+    assert.ok(original.scrollLeft > 0);
+    await heading.click();
+    assert.equal(await page.locator("#page-input").isDisabled(), true);
+    assert.deepEqual(await layout(), original);
+    await page.evaluate(() => window.replyToPageRequest());
+    await page.waitForFunction(() => !document.getElementById("page-input").disabled);
+    assert.deepEqual(await layout(), original);
+  } finally {
+    await browser.close();
+  }
 });

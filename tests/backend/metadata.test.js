@@ -76,3 +76,28 @@ test("typed cells keep their type", { skip }, () => {
   // A column holds one type: text in a missing Mass cell turns the column into text.
   assert.deepEqual(rows.map((r) => [r.Name, r.Count, r.Mass]), [["renamed", 7, "2.25"], ["b", 2.5, "text"]]);
 });
+
+test("explicit metadata sort distinguishes numeric text from text order", { skip }, () => {
+  const tmp = tempDir();
+  try {
+    const source = tmp.file("source.tsv",
+      "Name\tMass\tPeak\na\t100.2\t100,10\nb\t99.8\t100,10\nc\tunknown\t100,10\nd\t\t100,10\ne\tInfinity\t100,10\n");
+    const sort = (mode, direction) => ({ type: "page", sort: [{ column: "Mass", mode, direction }] });
+    const messages = runBackend("dataset", source, [
+      sort("text", "asc"), sort("numeric", "asc"), sort("numeric", "desc"),
+    ]);
+    assert.deepEqual(ofType(messages, "error"), []);
+    const [text, ascending, descending] = ofType(messages, "dataset-page").map(message => message.value.rows);
+    assert.ok(text.findIndex(row => row.Name === "a") < text.findIndex(row => row.Name === "b"));
+    assert.deepEqual(ascending.map(row => row.Name), ["b", "a", "c", "d", "e"]);
+    assert.deepEqual(descending.map(row => row.Name), ["a", "b", "c", "d", "e"]);
+    assert.equal(ascending[0].Mass, "99.8");
+
+    const numericSource = tmp.file("numeric.tsv", "Name\tMass\tPeak\na\t100\t100,10\nb\t99\t100,10\n");
+    const typed = runBackend("dataset", numericSource, [sort("text", "asc"), sort("numeric", "asc")], ["--infer-types"]);
+    const pages = ofType(typed, "dataset-page").map(message => message.value.rows.map(row => row.Mass));
+    assert.deepEqual(pages, [[100, 99], [99, 100]]);
+  } finally {
+    tmp.cleanup();
+  }
+});
