@@ -815,13 +815,23 @@ class MSEntityViewerProvider {
       { enableScripts: true, localResourceRoots: [vscode.Uri.file(uiDir)] }
     );
     panel.iconPath = this.iconPath;
+    const settings = () => {
+      const config = vscode.workspace.getConfiguration("msentitySpectrumViewer", documentUri);
+      return { mode: config.get("valueCountsViewMode", "scroll"), pageSize: config.get("valueCountsPageSize", 100) };
+    };
+    const configListener = vscode.workspace.onDidChangeConfiguration(event => {
+      if (["valueCountsViewMode", "valueCountsPageSize"].some(key =>
+        event.affectsConfiguration(`msentitySpectrumViewer.${key}`, documentUri))) {
+        panel.webview.postMessage({ type: "value-counts-settings", settings: settings() });
+      }
+    });
     const listener = panel.webview.onDidReceiveMessage(async message => {
       if (message?.type === "webview-ready") {
-        await panel.webview.postMessage(result);
+        await panel.webview.postMessage({ ...result, settings: settings() });
       } else if (message?.type === "save-value-counts") {
         try {
           await this.saveDelimitedTable(documentUri, {
-            basename: `${result.dataset_name}-${result.column}-counts`,
+            basename: `${result.dataset_name}-${result.column}-counts`.replace(/\./g, "_"),
             sourcePath: result.dataset_path,
             title: "Save value counts",
             content: format => formatValueCounts(result, format)
@@ -831,7 +841,10 @@ class MSEntityViewerProvider {
         }
       }
     });
-    panel.onDidDispose(() => listener.dispose());
+    panel.onDidDispose(() => {
+      listener.dispose();
+      configListener.dispose();
+    });
     panel.webview.html = getDatasetWebviewHtml(panel.webview, uiDir, documentUri, false, "value-counts");
   }
 

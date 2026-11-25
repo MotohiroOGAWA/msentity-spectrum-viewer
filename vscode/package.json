@@ -122,6 +122,19 @@
           "maximum": 500,
           "description": "Number of spectra loaded per page."
         },
+        "msentitySpectrumViewer.valueCountsViewMode": {
+          "type": "string",
+          "enum": ["scroll", "pages"],
+          "default": "scroll",
+          "description": "Show value counts in one scrolling table or split them into pages."
+        },
+        "msentitySpectrumViewer.valueCountsPageSize": {
+          "type": "integer",
+          "default": 100,
+          "minimum": 1,
+          "maximum": 5000,
+          "description": "Number of rows per page when value counts are displayed in pages."
+        },
         "msentitySpectrumViewer.copyLockedCells": {
           "type": "boolean",
           "default": true,

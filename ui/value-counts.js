@@ -1,7 +1,6 @@
 (() => {
   const host = acquireVsCodeApi();
   const app = document.getElementById("app");
-  const pageSize = 100;
   const escapeHtml = value => String(value).replace(/[&<>"']/g, character => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
   })[character]);
@@ -12,6 +11,16 @@
   };
 
   let page = 0;
+  let result;
+  let mode = "scroll";
+  let pageSize = 100;
+
+  function configure(settings) {
+    const size = Number(settings?.pageSize);
+    pageSize = Number.isFinite(size) ? Math.max(1, Math.min(5000, Math.trunc(size))) : 100;
+    mode = settings?.mode === "pages" ? "pages" : "scroll";
+    page = 0;
+  }
   let widths;
 
   function enableColumnResize(table) {
@@ -47,9 +56,11 @@
       });
     });
   }
-  function render({ column, dataset_name, rows, total_rows }) {
-    const start = page * pageSize;
-    const end = Math.min(start + pageSize, rows.length);
+  function render() {
+    const { column, dataset_name, rows, total_rows } = result;
+    const paged = mode === "pages";
+    const start = paged ? page * pageSize : 0;
+    const end = paged ? Math.min(start + pageSize, rows.length) : rows.length;
     const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
     app.innerHTML = `<div class="viewer">
       <div class="toolbar">
@@ -61,35 +72,46 @@
         <colgroup><col><col></colgroup>
         <thead><tr>${[column, column === "Count" ? "Occurrences" : "Count"].map(label =>
           `<th scope="col"><span class="value-counts-heading" title="${escapeHtml(label)}">${escapeHtml(label)}</span><span class="column-resize-handle" aria-hidden="true"></span></th>`).join("")}</tr></thead>
-        <tbody>${rows.length ? rows.slice(start, end).map(({ value, count }) =>
+        <tbody>${rows.length ? (paged ? rows.slice(start, end) : rows).map(({ value, count }) =>
           `<tr><td>${display(value)}</td><td>${count.toLocaleString()}</td></tr>`).join("")
           : '<tr><td colspan="2" class="empty">No rows to count.</td></tr>'}</tbody>
       </table></div>
-      <div class="pagination">
+      ${paged ? `<div class="pagination">
         <span>${rows.length ? start + 1 : 0}–${end} of ${rows.length}</span>
         <div class="page-controls">
           <button id="prev-counts" aria-label="Previous page" ${page === 0 ? "disabled" : ""}>‹</button>
-          <span>${page + 1} / ${pageCount}</span>
+          <span><input id="counts-page" type="number" min="1" max="${pageCount}" value="${page + 1}" aria-label="Page number" title="Enter a page number and press Enter"> / ${pageCount}</span>
           <button id="next-counts" aria-label="Next page" ${page + 1 >= pageCount ? "disabled" : ""}>›</button>
         </div>
-      </div>
+      </div>` : ""}
     </div>`;
     enableColumnResize(app.querySelector(".value-counts-table"));
     document.getElementById("export-counts").onclick = () => host.postMessage({ type: "save-value-counts" });
-    const navigate = (id, step) => {
-      document.getElementById(id).onclick = () => {
-        page += step;
-        render({ column, dataset_name, rows, total_rows });
-        const button = document.getElementById(id);
-        (button.disabled ? document.querySelector(".page-controls button:not(:disabled)") : button)?.focus();
-      };
-    };
-    navigate("prev-counts", -1);
-    navigate("next-counts", 1);
+    if (!paged) return;
+    function goToPage(number, controlId) {
+      const target = Math.min(pageCount, Math.max(1, Math.trunc(number)));
+      if (!Number.isFinite(target) || target === page + 1) {
+        document.getElementById("counts-page").value = page + 1;
+        return;
+      }
+      page = target - 1;
+      render();
+      const control = document.getElementById(controlId);
+      (control.disabled ? document.getElementById("counts-page") : control).focus();
+    }
+    document.getElementById("prev-counts").onclick = () => goToPage(page, "prev-counts");
+    document.getElementById("next-counts").onclick = () => goToPage(page + 2, "next-counts");
+    const pageInput = document.getElementById("counts-page");
+    pageInput.addEventListener("keydown", event => {
+      if (event.key === "Enter") goToPage(pageInput.valueAsNumber, pageInput.id);
+    });
   }
 
   window.addEventListener("message", ({ data }) => {
-    if (data?.type === "column-value-counts") render(data);
+    if (data?.type === "column-value-counts") result = data;
+    else if (data?.type !== "value-counts-settings") return;
+    configure(data.settings);
+    if (result) render();
   });
   host.postMessage({ type: "webview-ready" });
 })();

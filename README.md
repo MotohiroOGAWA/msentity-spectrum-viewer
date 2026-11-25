@@ -28,7 +28,11 @@ docs/                           protocol and embedding guides
 Right-click a metadata column header and choose **Show value counts** to open
 a separate tab with the distinct values and their counts. The tab captures the
 current dataset and filters, including in-memory edits, across all matching
-rows. Use **Export CSV / TSV** in that tab to save the full summary.
+rows. The tab scrolls through the whole summary by default. Set
+`msentitySpectrumViewer.valueCountsViewMode` to `pages` to enable pagination and
+use `msentitySpectrumViewer.valueCountsPageSize` to set the number of rows per
+page (100 by default). In paginated mode, enter a page number and press Enter
+to jump to it. Use **Export CSV / TSV** in the tab to save the full summary.
 
 ## Documentation
 

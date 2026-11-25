@@ -219,6 +219,8 @@ test("column context menu requests counts and the result table offers export", {
         ...Array.from({ length: 100 }, (_, index) => ({ value: `value ${index}`, count: 1 }))],
       total_rows: 102
     }, "*"));
+    await result.getByRole("cell", { name: "value 99", exact: true }).waitFor();
+    assert.equal(await result.getByRole("button", { name: "Next page" }).count(), 0);
     const cells = await result.getByRole("row").nth(1).getByRole("cell").allTextContents();
     assert.deepEqual(cells, ["<unique>", "2"]);
 
@@ -237,7 +239,18 @@ test("column context menu requests counts and the result table offers export", {
     }
     const resized = await widths();
     assert.deepEqual(resized, initial.map(width => Math.round(width) + 50));
+    await result.evaluate(() => window.postMessage({
+      type: "value-counts-settings", settings: { mode: "pages", pageSize: 25 }
+    }, "*"));
+    const pageInput = result.getByRole("spinbutton", { name: "Page number" });
+    assert.equal(await pageInput.getAttribute("max"), "5");
+    assert.equal(await result.locator("tbody tr").count(), 25);
     await result.getByRole("button", { name: "Next page" }).click();
+    assert.equal(await pageInput.inputValue(), "2");
+    await pageInput.fill("5");
+    await pageInput.press("Enter");
+    assert.equal(await pageInput.inputValue(), "5");
+    assert.equal(await result.locator("tbody tr").count(), 1);
     assert.deepEqual(await widths(), resized);
     await result.getByRole("button", { name: "Export CSV / TSV" }).click();
     assert.deepEqual(await result.evaluate(() => window.lastRequest), { type: "save-value-counts" });
