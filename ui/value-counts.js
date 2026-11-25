@@ -40,7 +40,7 @@
     sortedRows = sort.length ? [...result.rows].sort(compareRows) : undefined;
     page = 0;
     render();
-    app.querySelector(`[data-counts-sort="${key}"]`).focus();
+    app.querySelector(`[data-counts-sort="${key}"]`).focus({ preventScroll: true });
   }
 
   function sortHeading(key, label) {
@@ -70,7 +70,8 @@
       table.style.width = `${widths[0] + widths[1]}px`;
       columns.forEach((column, index) => { column.style.width = `${widths[index]}px`; });
     };
-    if (widths) applyWidths();
+    widths ??= headers.map(cell => Math.round(cell.getBoundingClientRect().width));
+    applyWidths();
 
     headers.forEach((header, index) => {
       const handle = header.querySelector(".column-resize-handle");
@@ -78,7 +79,6 @@
         if (event.button !== 0) return;
         event.preventDefault();
         handle.setPointerCapture(event.pointerId);
-        widths ??= headers.map(cell => Math.round(cell.getBoundingClientRect().width));
         const startWidth = widths[index];
         const startX = event.clientX;
         const move = current => {
@@ -102,6 +102,7 @@
     const start = paged ? page * pageSize : 0;
     const end = paged ? Math.min(start + pageSize, rows.length) : rows.length;
     const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
+    const scrollLeft = app.querySelector(".table-wrap")?.scrollLeft ?? 0;
     app.innerHTML = `<div class="viewer">
       <div class="toolbar">
         <div class="summary"><strong>${escapeHtml(dataset_name)} · ${escapeHtml(column)}</strong>
@@ -127,7 +128,9 @@
         </div>
       </div>` : ""}
     </div>`;
-    enableColumnResize(app.querySelector(".value-counts-table"));
+    const wrap = app.querySelector(".table-wrap");
+    enableColumnResize(wrap.querySelector("table"));
+    wrap.scrollLeft = scrollLeft;
     app.querySelectorAll("[data-counts-sort]").forEach(button => {
       button.onclick = () => changeSort(button.dataset.countsSort);
     });

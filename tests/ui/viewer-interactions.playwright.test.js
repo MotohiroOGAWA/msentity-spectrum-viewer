@@ -18,6 +18,12 @@ async function openViewer(options = {}) {
   await page.addInitScript(() => {});
   await page.evaluate(viewerOptions => {
     window.msentityViewerOptions = viewerOptions;
+    if (viewerOptions.blockInlineStyles) {
+      const csp = document.createElement("meta");
+      csp.httpEquiv = "Content-Security-Policy";
+      csp.content = "style-src-attr 'none'";
+      document.head.append(csp);
+    }
     window.__trace = { messages: [], scrollTo: [], raf: 0, mutations: 0, appReplacements: 0, copied: [] };
     const innerHTML = Object.getOwnPropertyDescriptor(Element.prototype, "innerHTML");
     Object.defineProperty(Element.prototype, "innerHTML", { configurable: true,
@@ -39,7 +45,11 @@ async function openViewer(options = {}) {
       postMessage(message) {
         window.__trace.messages.push(message);
         if (message.type === "webview-ready") setTimeout(() => window.postMessage({ type: "backend-ready", dataset: { id: "dataset", name: "dataset" } }, "*"));
-        if (message.type === "ready" || message.type === "page-request") setTimeout(() => window.postMessage({ type: "dataset-page", value }, "*"));
+        if (message.type === "ready" || message.type === "page-request") {
+          const reply = () => window.postMessage({ type: "dataset-page", value }, "*");
+          if (message.type === "page-request" && viewerOptions.holdPageReply) window.replyToPageRequest = reply;
+          else setTimeout(reply);
+        }
         if (message.type === "edit-cell") setTimeout(() => window.postMessage({ type: "metadata-updated",
           dataset_id: message.datasetId, row_id: message.rowId, column: message.column, value: `${message.value}_edited` }, "*"));
       }
@@ -228,6 +238,11 @@ test("column context menu requests counts and the result table offers export", {
       headers.map(header => header.getBoundingClientRect().width));
     const initial = await widths();
     assert.ok(initial[0] + initial[1] < 300, `Unexpected initial widths: ${initial}`);
+    const valueHeading = result.locator('[data-counts-sort="value"]');
+    for (let click = 0; click < 3; click++) {
+      await valueHeading.click();
+      assert.deepEqual(await widths(), initial);
+    }
     for (const index of [0, 1]) {
       const handle = await result.locator(".column-resize-handle").nth(index).boundingBox();
       const x = handle.x + handle.width / 2;
@@ -295,6 +310,29 @@ test("metadata header clicks sort text and the context menu offers explicit nume
     assert.deepEqual(await lastSort(), [{ column: "Column_00", mode: "numeric", direction: "desc" }]);
     await heading.click();
     assert.deepEqual(await lastSort(), [{ column: "Column_00", mode: "text", direction: "asc" }]);
+  } finally {
+    await browser.close();
+  }
+});
+
+
+test("metadata sorting preserves column widths and horizontal scroll while the backend responds", { skip }, async () => {
+  const { browser, page } = await openViewer({ blockInlineStyles: true, holdPageReply: true });
+  try {
+    const heading = page.locator('[data-sort-column="Column_10"]');
+    await heading.scrollIntoViewIfNeeded();
+    const layout = () => page.locator(".table-wrap").evaluate(wrap => ({
+      scrollLeft: wrap.scrollLeft,
+      widths: [...wrap.querySelectorAll("th")].map(th => th.getBoundingClientRect().width),
+    }));
+    const original = await layout();
+    assert.ok(original.scrollLeft > 0);
+    await heading.click();
+    assert.equal(await page.locator("#page-input").isDisabled(), true);
+    assert.deepEqual(await layout(), original);
+    await page.evaluate(() => window.replyToPageRequest());
+    await page.waitForFunction(() => !document.getElementById("page-input").disabled);
+    assert.deepEqual(await layout(), original);
   } finally {
     await browser.close();
   }

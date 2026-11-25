@@ -285,30 +285,30 @@
     const scrollLeft = savedView.scrollLeft;
     wrap.scrollLeft = scrollLeft;
   }
-  function freezeAutomaticColumnWidths() {
-    if (loadingPage || resettingColumnWidths.has(activeDatasetId)) return;
+  function applyColumnWidths() {
+    // Assign widths through the DOM style API, which works in the webview CSP.
     const table = document.querySelector(".dataset-table");
     if (!table) return;
     const headers = [...table.querySelectorAll("thead th[data-column-key]")];
     const cols = [...table.querySelectorAll("colgroup col")];
     const widths = widthsFor(activeDatasetId);
-    for (const [index, header] of headers.entries()) {
-      if (!widths.has(header.dataset.columnKey)) widths.set(header.dataset.columnKey, Math.round(header.getBoundingClientRect().width));
-      const width = widths.get(header.dataset.columnKey);
+    const keys = headers.map(header => header.dataset.columnKey);
+    if (keys.some(key => !widths.has(key))) {
+      if (loadingPage || resettingColumnWidths.has(activeDatasetId)) return;
+      // Read all automatic widths before applying any, so measurement cannot
+      // change the layout of the remaining columns.
+      const measured = headers.map(header => Math.round(header.getBoundingClientRect().width));
+      keys.forEach((key, index) => {
+        if (!widths.has(key)) widths.set(key, measured[index]);
+      });
+    }
+    for (const [index, key] of keys.entries()) {
+      const width = widths.get(key);
       cols[index].style.width = cols[index].style.minWidth = cols[index].style.maxWidth = `${width}px`;
     }
     table.classList.add("has-custom-widths");
-    fixTableWidth(table, widths, headers.map(header => header.dataset.columnKey));
+    fixTableWidth(table, widths, keys);
   }
-  const columnStyle = (widths, key) => {
-    const width = widths.get(key);
-    return Number.isFinite(width) ? ` style="width:${width}px;min-width:${width}px;max-width:${width}px"` : "";
-  };
-  const tableWidthStyle = (widths, keys) => {
-    if (!keys.length || !keys.every(key => Number.isFinite(widths.get(key)))) return "";
-    const width = keys.reduce((sum, key) => sum + widths.get(key), 0);
-    return ` style="width:${width}px;min-width:${width}px"`;
-  };
   function fixTableWidth(table, widths, keys) {
     if (!keys.length || !keys.every(key => Number.isFinite(widths.get(key)))) return;
     const width = keys.reduce((sum, key) => sum + widths.get(key), 0);
@@ -444,7 +444,7 @@
       action.setAttribute("role", "menuitem");
       action.textContent = label;
       action.addEventListener("click", () => {
-        trigger.focus();
+        trigger.focus({ preventScroll: true });
         run();
       });
       menu.append(action);
@@ -478,15 +478,15 @@
       if (e.key === "Escape") {
         e.preventDefault();
         e.stopPropagation();
-        trigger.focus();
+        trigger.focus({ preventScroll: true });
       } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
         e.preventDefault();
         const step = e.key === "ArrowDown" ? 1 : -1;
         const next = (actions.indexOf(document.activeElement) + step + actions.length) % actions.length;
-        actions[next].focus();
+        actions[next].focus({ preventScroll: true });
       }
     });
-    actions[0].focus();
+    actions[0].focus({ preventScroll: true });
   }
 
   function render() {
@@ -509,9 +509,7 @@
       const index = rowSort.findIndex((item) => item.column === column);
       return index < 0 ? null : { ...rowSort[index], priority: index + 1 };
     };
-    const widths = widthsFor(activeDatasetId);
     const columnKeys = ["row", "spectrum", ...(showStructureColumn ? ["structure"] : []), ...selectedColumns.map(c => `metadata:${c}`)];
-    const hasFixedWidths = columnKeys.length > 0 && columnKeys.every(key => Number.isFinite(widths.get(key)));
 
     const columnMenu = columnMenuOpen ? `
       <div class="column-menu" id="column-menu">
@@ -587,7 +585,7 @@
         </div>
         ${metadataForm()}
         ${settingsForm()}
-        <div class="table-wrap" data-dataset-id="${esc(activeDatasetId)}"><table class="dataset-table ${hasFixedWidths ? "has-custom-widths" : ""}"${tableWidthStyle(widths, columnKeys)}><colgroup>${columnKeys.map(key => `<col data-column-key="${esc(key)}"${columnStyle(widths, key)}>`).join("")}</colgroup><thead><tr><th class="row-column" data-column-key="row">${resizeHandle("row")}Row</th><th class="spectrum-column" data-column-key="spectrum">${resizeHandle("spectrum")}Spectrum</th>${showStructureColumn ? `<th class="structure-column" data-column-key="structure">${resizeHandle("structure")}Structure</th>` : ""}${selectedColumns.map((c) => { const item = sortFor(c), key = `metadata:${c}`; return `<th data-column-key="${esc(key)}"><button class="table-sort" data-sort-column="${esc(c)}" title="Click: text ascending → descending → remove sort. Right-click for sort options.">${esc(c)}<span>${item ? `${item.mode === "numeric" ? "123 · " : ""}${item.priority}${item.direction === "asc" ? "▲" : "▼"}` : ""}</span></button>${resizeHandle(key)}</th>`; }).join("")}</tr></thead><tbody>
+        <div class="table-wrap" data-dataset-id="${esc(activeDatasetId)}"><table class="dataset-table"><colgroup>${columnKeys.map(key => `<col data-column-key="${esc(key)}">`).join("")}</colgroup><thead><tr><th class="row-column" data-column-key="row">${resizeHandle("row")}Row</th><th class="spectrum-column" data-column-key="spectrum">${resizeHandle("spectrum")}Spectrum</th>${showStructureColumn ? `<th class="structure-column" data-column-key="structure">${resizeHandle("structure")}Structure</th>` : ""}${selectedColumns.map((c) => { const item = sortFor(c), key = `metadata:${c}`; return `<th data-column-key="${esc(key)}"><button class="table-sort" data-sort-column="${esc(c)}" title="Click: text ascending → descending → remove sort. Right-click for sort options.">${esc(c)}<span>${item ? `${item.mode === "numeric" ? "123 · " : ""}${item.priority}${item.direction === "asc" ? "▲" : "▼"}` : ""}</span></button>${resizeHandle(key)}</th>`; }).join("")}</tr></thead><tbody>
           ${pageRows.length ? pageRows.map(({ row, index }) => { const smiles = smilesColumn ? String(row?.[smilesColumn] ?? "").trim() : ""; return `<tr class="${selectedSpectrumIndex === index ? "selected-record" : ""}"><td class="row-column">${rowOffset() + index + 1}</td><td class="spectrum-column"><button class="spectrum-button" data-spectrum-index="${index}" title="Show spectrum ${rowOffset() + index + 1}"><svg viewBox="0 0 28 22"><path d="M2 19h24M4 18V13m4 5V7m4 11v-4m4 4V3m4 15V9m4 9v-7"/></svg></button></td>${showStructureColumn ? `<td class="structure-column">${smiles ? `<button class="structure-button" data-structure-index="${index}" aria-label="View structure" title="View structure"><svg viewBox="0 0 28 24" aria-hidden="true" focusable="false"><path class="structure-edges" d="M14 3 21.8 7.5v9L14 21l-7.8-4.5v-9Z"/><g class="structure-nodes"><circle cx="14" cy="3" r="2.1"/><circle cx="21.8" cy="7.5" r="2.1"/><circle cx="21.8" cy="16.5" r="2.1"/><circle cx="14" cy="21" r="2.1"/><circle cx="6.2" cy="16.5" r="2.1"/><circle cx="6.2" cy="7.5" r="2.1"/></g></svg></button>` : ""}</td>` : ""}${selectedColumns.map((c) => `<td ${editingUnlocked ? 'tabindex="0"' : ""} data-edit-row="${index}" data-edit-column="${esc(c)}" class="${editingUnlocked ? "editable-cell" : "locked-cell"}" title="${editingUnlocked ? `Double-click or press Enter to edit: ${esc(display(row?.[c]))}` : `${viewerOptions.behavior.lockedCellCopyGesture === "leftClick" ? "Click" : "Right-click"} to copy the complete value`}">${esc(display(row?.[c]))}</td>`).join("")}</tr>`; }).join("") : `<tr><td colspan="${selectedColumns.length + 2 + (showStructureColumn ? 1 : 0)}" class="empty">No spectra match the filters.</td></tr>`}
         </tbody></table></div>
         <div class="pagination"><span>${start}–${end} of ${totalRows()}</span><div class="page-controls"><button id="prev-page" ${page() === 0 || loadingPage ? "disabled" : ""}>‹</button><span><input id="page-input" type="number" min="1" max="${pageCount()}" value="${page() + 1}" ${loadingPage ? "disabled" : ""}/> / ${pageCount()}</span><button id="next-page" ${page() >= pageCount() - 1 || loadingPage ? "disabled" : ""}>›</button></div><span>${loadingPage ? "Loading…" : `${pageSize()} rows/page`}</span></div>
@@ -595,7 +593,7 @@
         ${structurePreview ? `<div class="structure-backdrop" id="structure-backdrop"><section class="structure-preview" role="dialog" aria-modal="true" aria-labelledby="structure-title"><header><strong id="structure-title">Structure</strong><button id="close-structure" class="modal-close" aria-label="Close structure preview">×</button></header><div class="structure-canvas">${structurePreview.url ? `<img src="${esc(structurePreview.url)}" alt="Chemical structure for ${esc(structurePreview.smiles)}">` : `<span>Rendering structure…</span>`}</div><code>${esc(structurePreview.smiles)}</code></section></div>` : ""}
       </div>`;
 
-    freezeAutomaticColumnWidths();
+    applyColumnWidths();
     restoreTableView();
     document.querySelectorAll("th[data-column-key]").forEach(header => {
       if (!header.querySelector("[data-sort-column]")) return;
