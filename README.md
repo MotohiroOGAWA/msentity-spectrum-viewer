@@ -25,6 +25,11 @@ docs/                           protocol and embedding guides
                                                               └──▶ host/chemistry (RDKit WebAssembly, worker thread)
 ```
 
+Right-click a metadata column header and choose **Show value counts** to open
+a separate tab with the distinct values and their counts. The tab captures the
+current dataset and filters, including in-memory edits, across all matching
+rows. Use **Export CSV / TSV** in that tab to save the full summary.
+
 ## Documentation
 
 * [vscode/README.md](vscode/README.md) — using the extension

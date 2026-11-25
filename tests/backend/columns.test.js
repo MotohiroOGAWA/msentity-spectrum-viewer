@@ -49,3 +49,31 @@ test("columns, peak edits, peak filters, and MSDS round trip", { skip }, () => {
     tmp.cleanup();
   }
 });
+
+test("value counts cover filtered rows across pages and include in-memory edits", { skip }, () => {
+  const tmp = tempDir();
+  try {
+    const source = tmp.file("source.tsv",
+      "Name\tGroup\tPeak\na\tx\t100,10\nb\tx\t100,10\nc\ty\t100,10\nd\ty\t100,10\n");
+    const filters = [{ column: "Group", operator: "text_eq", value: "x" }];
+    const messages = runBackend("dataset", source, [
+      { type: "page", filters },
+      { type: "update-cell", row_id: 1, column: "Name", value: "a" },
+      { type: "column-value-counts", column: "Name", request_id: 1 },
+      { type: "column-value-counts", column: "Name", filters },
+      { type: "column-value-counts", column: "Unknown" },
+    ], ["--page-size", "1"]);
+    assert.equal(ofType(messages, "dataset-page")[0].value.rows.length, 1);
+    const [all, filtered, unknown] = ofType(messages, "column-value-counts");
+    assert.equal(all.request_id, 1);
+    assert.equal(all.total_rows, 4);
+    assert.deepEqual(all.rows, [
+      { value: "a", count: 2 }, { value: "c", count: 1 }, { value: "d", count: 1 },
+    ]);
+    assert.equal(filtered.total_rows, 2);
+    assert.deepEqual(filtered.rows, [{ value: "a", count: 2 }]);
+    assert.match(unknown.error, /Unknown column/);
+  } finally {
+    tmp.cleanup();
+  }
+});

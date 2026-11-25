@@ -261,3 +261,14 @@ button:disabled { cursor: default; opacity: .5; }
   .view-actions .columns { position: static; }
   .view-actions .column-menu { left: auto; right: 12px; }
 }
+
+.more-actions-menu.column-header-menu { position: fixed; right: auto; width: max-content; max-width: 100vw; }
+.value-counts-table { width: max-content; }
+.value-counts-table th, .value-counts-table td { box-sizing: border-box; }
+.value-counts-table th:last-child, .value-counts-table td:last-child { text-align: right; }
+.value-counts-table.has-custom-widths td { max-width: none; }
+.value-counts-heading { display: block; max-width: 360px; overflow: hidden; text-overflow: ellipsis; }
+.value-counts-table.has-custom-widths .value-counts-heading { max-width: none; }
+.value-counts-table .column-resize-handle { right: 0; }
+.value-counts-table .column-resize-handle.is-resizing::after { background: var(--vscode-focusBorder, var(--accent)); }
+.value-counts-table td:first-child { white-space: pre-wrap; overflow-wrap: anywhere; }

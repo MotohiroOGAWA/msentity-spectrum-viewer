@@ -194,3 +194,54 @@ test("column resize preserves table DOM and viewport without correction frames",
     assert.ok(after.widths[14] < before.widths[14]);
   } finally { await browser.close(); }
 });
+
+test("column context menu requests counts and the result table offers export", { skip }, async () => {
+  const { browser, page } = await openViewer();
+  try {
+    const heading = page.locator('[data-sort-column="Column_00"]');
+    await heading.click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Show value counts" }).click();
+    const request = await page.evaluate(() => window.__trace.messages.at(-1));
+    assert.equal(request.type, "column-value-counts");
+    assert.equal(request.datasetId, "dataset");
+    assert.equal(request.column, "Column_00");
+
+    const result = await browser.newPage();
+    await result.setContent('<div id="app"></div>');
+    await result.addStyleTag({ path: path.join(ROOT, "ui/viewer.css") });
+    await result.evaluate(() => {
+      window.acquireVsCodeApi = () => ({ postMessage(message) { window.lastRequest = message; } });
+    });
+    await result.addScriptTag({ path: path.join(ROOT, "ui/value-counts.js") });
+    await result.evaluate(() => window.postMessage({
+      type: "column-value-counts", column: "Column_00", dataset_name: "dataset",
+      rows: [{ value: "<unique>", count: 2 },
+        ...Array.from({ length: 100 }, (_, index) => ({ value: `value ${index}`, count: 1 }))],
+      total_rows: 102
+    }, "*"));
+    const cells = await result.getByRole("row").nth(1).getByRole("cell").allTextContents();
+    assert.deepEqual(cells, ["<unique>", "2"]);
+
+    const widths = () => result.getByRole("columnheader").evaluateAll(headers =>
+      headers.map(header => header.getBoundingClientRect().width));
+    const initial = await widths();
+    assert.ok(initial[0] + initial[1] < 300, `Unexpected initial widths: ${initial}`);
+    for (const index of [0, 1]) {
+      const handle = await result.locator(".column-resize-handle").nth(index).boundingBox();
+      const x = handle.x + handle.width / 2;
+      const y = handle.y + handle.height / 2;
+      await result.mouse.move(x, y);
+      await result.mouse.down();
+      await result.mouse.move(x + 50, y, { steps: 3 });
+      await result.mouse.up();
+    }
+    const resized = await widths();
+    assert.deepEqual(resized, initial.map(width => Math.round(width) + 50));
+    await result.getByRole("button", { name: "Next page" }).click();
+    assert.deepEqual(await widths(), resized);
+    await result.getByRole("button", { name: "Export CSV / TSV" }).click();
+    assert.deepEqual(await result.evaluate(() => window.lastRequest), { type: "save-value-counts" });
+  } finally {
+    await browser.close();
+  }
+});

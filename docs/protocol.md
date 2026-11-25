@@ -82,6 +82,7 @@ Every request may carry `dataset_id` (default: the opened file),
 | `export` | `path`, `file_type`, `filters`, `sort`, `columns` | `export-start`, `export-progress`…, `export-complete` {`path`, `total_rows`} or `export-error` |
 | `similarity-options` | | `similarity-options` {`datasets` [{`id`, `name`, `columns`, `total_rows`}], `active_dataset_id`} |
 | `calculate-similarity` | see below | `similarity-progress`…, `similarity-complete` {`path`, `total_rows`, `candidate_pairs`} or `similarity-error` |
+| `column-value-counts` | `column`, optional `filters` and `request_id` | `column-value-counts` {`dataset_id`, `dataset_name`, `dataset_path`, `column`, `rows` ([{ value, count }]), `total_rows`, `request_id`} or {`error`} |
 | `column-values` | `request_id`, `column` or `detect_smiles`: true, `filters` | `column-values` {`request_id`, `column`, `values`, `row_ids`, `total_rows`} or {`error`} |
 | `render-structure` | `smiles`, `width`, `height` | answered by the host: `structure-rendered` {`smiles`, `svg`} or `chemistry-error` |
 | `calculate-structure-counts` | `filters` | answered by the host: `structure-counts` {`total_rows`, `smiles_column`, `unique_smiles`, `canonical_structures`} or `structure-counts-error` |

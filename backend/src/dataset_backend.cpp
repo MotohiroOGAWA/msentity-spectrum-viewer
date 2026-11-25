@@ -363,6 +363,8 @@ class DatasetBackend {
       } catch (const std::exception& error) {
         emit({{"type", "spec-id-error"}, {"dataset_id", id}, {"message", error.what()}});
       }
+    } else if (type == "column-value-counts") {
+      column_value_counts(id, request);
     } else if (type == "column-values") {
       column_values(id, request);
     } else if (type == "render-structure") {
@@ -654,6 +656,35 @@ class DatasetBackend {
 
   // Values of one column for the host (SMARTS filters, structure counts):
   // {"type": "column-values", "request_id", "dataset_id", "column", "values", "row_ids", "total_rows"}
+  void column_value_counts(const std::string& id, const json& request) {
+    json reply = {{"type", "column-value-counts"}, {"request_id", request.value("request_id", json())},
+                  {"dataset_id", id}};
+    try {
+      const Entry& source = entry(id);
+      const auto column = request.at("column").get<std::string>();
+      auto view = apply_dataset_view(source.dataset, request.value("filters", json()), json());
+      if (!view.has_column(column)) throw msentity::KeyError("Unknown column: " + column);
+
+      // Serialized JSON keys preserve the type and exact value, including null.
+      std::map<std::string, int64_t> counts;
+      for (const auto& value : view.column_values(column)) ++counts[to_json(value).dump()];
+      std::vector<std::pair<std::string, int64_t>> groups(counts.begin(), counts.end());
+      std::stable_sort(groups.begin(), groups.end(), [](const auto& left, const auto& right) {
+        return left.second > right.second;
+      });
+      json rows = json::array();
+      for (const auto& [value, count] : groups) {
+        rows.push_back({{"value", json::parse(value)}, {"count", count}});
+      }
+      reply.update({{"column", column}, {"rows", std::move(rows)}, {"total_rows", view.size()},
+                    {"dataset_name", source.name},
+                    {"dataset_path", source.path ? json(utf8(*source.path)) : json(nullptr)}});
+    } catch (const std::exception& error) {
+      reply["error"] = error.what();
+    }
+    emit(reply);
+  }
+
   void column_values(const std::string& id, const json& request) {
     json reply = {{"type", "column-values"}, {"request_id", request.value("request_id", json())},
                   {"dataset_id", id}};

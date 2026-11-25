@@ -24,7 +24,7 @@ const containsSmarts = node => Array.isArray(node)
   : Boolean(node && (isSmartsCondition(node) ||
     (Array.isArray(node.children) && node.children.some(containsSmarts))));
 
-const RESOLVED_TYPES = new Set(["page", "reload", "export", "calculate-structure-counts"]);
+const RESOLVED_TYPES = new Set(["page", "reload", "export", "calculate-structure-counts", "column-value-counts"]);
 
 class DatasetSession {
   /**
@@ -92,7 +92,9 @@ class DatasetSession {
     } catch (error) {
       const message = error.message || String(error);
       if (request.type === "export") this.onMessage({ type: "export-error", message });
-      else if (request.type === "calculate-structure-counts") {
+      else if (request.type === "column-value-counts") {
+        this.onMessage({ type: request.type, dataset_id: datasetId, error: message });
+      } else if (request.type === "calculate-structure-counts") {
         this.onMessage({ type: "structure-counts-error", dataset_id: request.dataset_id, message });
       } else this.onMessage({ type: "filter-error", operator: "smarts", message });
       return;

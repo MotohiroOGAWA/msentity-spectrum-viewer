@@ -416,6 +416,43 @@
     document.getElementById("show-logs")?.addEventListener("click", () => vscode.postMessage({ type: "show-logs" }));
   }
 
+  function openColumnHeaderMenu(event, header) {
+    if (loadingPage || !showControl("columnValueCounts")) return;
+    event.preventDefault();
+    event.stopPropagation();
+    document.querySelector(".column-header-menu")?.remove();
+
+    const trigger = header.querySelector("[data-sort-column]");
+    const menu = document.createElement("div");
+    menu.className = "more-actions-menu column-header-menu";
+    menu.setAttribute("role", "menu");
+    const action = document.createElement("button");
+    action.className = "more-action";
+    action.setAttribute("role", "menuitem");
+    action.textContent = "Show value counts";
+    menu.append(action);
+    app.append(menu);
+
+    const bounds = trigger.getBoundingClientRect();
+    const x = event.clientX || bounds.left;
+    const y = event.clientY || bounds.bottom;
+    menu.style.left = `${Math.max(0, Math.min(x, window.innerWidth - menu.offsetWidth))}px`;
+    menu.style.top = `${Math.max(0, Math.min(y, window.innerHeight - menu.offsetHeight))}px`;
+    menu.addEventListener("focusout", () => menu.remove());
+    menu.addEventListener("keydown", e => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopPropagation();
+      trigger.focus();
+    });
+    action.addEventListener("click", () => {
+      trigger.focus();
+      vscode.postMessage({ type: "column-value-counts", datasetId: activeDatasetId,
+        column: trigger.dataset.sortColumn, filters });
+    });
+    action.focus();
+  }
+
   function render() {
     captureTableView();
     if (!datasetOptions.length && !activeDatasetId && value === null) {
@@ -524,6 +561,15 @@
 
     freezeAutomaticColumnWidths();
     restoreTableView();
+    document.querySelectorAll("th[data-column-key]").forEach(header => {
+      if (!header.querySelector("[data-sort-column]")) return;
+      header.addEventListener("contextmenu", event => openColumnHeaderMenu(event, header));
+      header.addEventListener("keydown", event => {
+        if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
+          openColumnHeaderMenu(event, header);
+        }
+      });
+    });
     document.querySelectorAll(".column-resize-handle").forEach(handle => handle.addEventListener("pointerdown", event => {
       event.preventDefault(); event.stopPropagation();
       const table = handle.closest("table"), headers = [...table.querySelectorAll("thead th[data-column-key]")];
@@ -1137,6 +1183,7 @@
     }
   });
   document.addEventListener("click", (e) => {
+    if (!e.target.closest?.(".column-header-menu")) document.querySelector(".column-header-menu")?.remove();
     if (datasetMenuOpen && !e.target.closest?.(".dataset-info")) { datasetMenuOpen = false; render(); }
     else if (moreActionsOpen && !e.target.closest?.(".more-actions")) { moreActionsOpen = false; render(); }
     else if (columnMenuOpen && !e.target.closest?.(".columns")) { columnMenuOpen = false; render(); }
