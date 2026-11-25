@@ -162,14 +162,12 @@ function loadHost(context) {
   return require(path.join(resourceDir(context, "host"), "index.js"));
 }
 
-// The backend executable: msentitySpectrumViewer.backendPath, else
-// MSENTITY_VIEWER_BACKEND, else bin/<platform>/ of the package, else the
+// The backend executable: MSENTITY_VIEWER_BACKEND, else
+// bin/<platform>/ of the package, else the
 // repository build (build/backend/).
 function resolveBackendExecutable(context, host) {
-  const config = vscode.workspace.getConfiguration("msentitySpectrumViewer");
   return host.findBackendExecutable({
     roots: [context.extensionPath, path.join(context.extensionPath, "..")],
-    override: String(config.get("backendPath", "") || "").trim(),
   });
 }
 
@@ -240,7 +238,7 @@ class MSEntityViewerProvider {
       webview.postMessage({
         type: "error",
         title: "Viewer backend not found",
-        message: "msentity-viewer-backend is not part of this installation. Install the extension package for your platform, or set msentitySpectrumViewer.backendPath."
+        message: "msentity-viewer-backend is not part of this installation. Install the extension package for your platform."
       });
       return;
     }
@@ -291,7 +289,7 @@ class MSEntityViewerProvider {
       send({
         type: "error",
         title: "Could not start the viewer backend",
-        message: `${error.message}\n\nCheck msentitySpectrumViewer.backendPath or reinstall the extension.`
+        message: `${error.message}\n\nCheck the viewer logs or reinstall the extension.`
       });
     });
     backend.on("exit", (code, signal) => {
@@ -828,6 +826,9 @@ class MSEntityViewerProvider {
     const listener = panel.webview.onDidReceiveMessage(async message => {
       if (message?.type === "webview-ready") {
         await panel.webview.postMessage({ ...result, settings: settings() });
+      } else if (message?.type === "open-value-counts-settings") {
+        const { publisher, name } = this.context.extension.packageJSON;
+        await vscode.commands.executeCommand("workbench.action.openSettings", `@ext:${publisher}.${name} value counts`);
       } else if (message?.type === "save-value-counts") {
         try {
           await this.saveDelimitedTable(documentUri, {

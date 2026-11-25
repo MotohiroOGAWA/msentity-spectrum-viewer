@@ -252,6 +252,26 @@ test("column context menu requests counts and the result table offers export", {
     assert.equal(await pageInput.inputValue(), "5");
     assert.equal(await result.locator("tbody tr").count(), 1);
     assert.deepEqual(await widths(), resized);
+
+    const countSort = result.locator('[data-counts-sort="count"]');
+    const valueSort = result.locator('[data-counts-sort="value"]');
+    const firstValue = () => result.locator("tbody td").first().textContent();
+    await countSort.click();
+    assert.equal(await pageInput.inputValue(), "1");
+    assert.equal(await firstValue(), "value 0");
+    await valueSort.click();
+    assert.match(await valueSort.getAttribute("aria-label"), /ascending, priority 2/);
+    await valueSort.click();
+    assert.equal(await firstValue(), "value 99");
+    await countSort.click();
+    assert.equal(await firstValue(), "<unique>");
+    await countSort.click();
+    assert.match(await valueSort.getAttribute("aria-label"), /descending, priority 1/);
+    await valueSort.click();
+    assert.equal(await firstValue(), "<unique>");
+
+    await result.getByRole("button", { name: "Settings" }).click();
+    assert.deepEqual(await result.evaluate(() => window.lastRequest), { type: "open-value-counts-settings" });
     await result.getByRole("button", { name: "Export CSV / TSV" }).click();
     assert.deepEqual(await result.evaluate(() => window.lastRequest), { type: "save-value-counts" });
   } finally {

@@ -273,3 +273,6 @@ button:disabled { cursor: default; opacity: .5; }
 .value-counts-table .column-resize-handle.is-resizing::after { background: var(--vscode-focusBorder, var(--accent)); }
 .value-counts-table td:first-child { white-space: pre-wrap; overflow-wrap: anywhere; }
 #counts-page { width: 7ch; padding: 4px; text-align: right; }
+.value-counts-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
+.value-counts-table th:last-child .table-sort { justify-content: flex-end; }
+.value-counts-table .table-sort { padding-right: 2px; }

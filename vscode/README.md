@@ -349,8 +349,6 @@ discards assignments that have not been exported.
   are compared. `toleranceUnit`, `toleranceDa`, and `tolerancePpm` are also
   the initial m/z tolerance of **Calculate similarity**, and `precursorColumn`
   its precursor m/z column for modified cosine and BONANZA.
-- `msentitySpectrumViewer.backendPath`: use another `msentity-viewer-backend`
-  executable (development builds).
 
 ## More
 
