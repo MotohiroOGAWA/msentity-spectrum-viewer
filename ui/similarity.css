@@ -92,6 +92,24 @@ body.modal-open { overflow: hidden; }
 /* The image is transparent: the preview shows it on a checkerboard. */
 .image-preview { max-height: 560px; overflow: auto; border: 1px solid var(--vscode-panel-border); background-color: #fff; background-image: linear-gradient(45deg, #ddd 25%, transparent 25%), linear-gradient(-45deg, #ddd 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ddd 75%), linear-gradient(-45deg, transparent 75%, #ddd 75%); background-size: 20px 20px; background-position: 0 0, 0 10px, 10px -10px, -10px 0; }
 .image-preview svg { display: block; width: 100%; height: auto; }
+.resize-help { margin: 0; }
+.distribution-image-preview {
+  container-type: inline-size;
+  max-height: min(560px, 50vh);
+  padding: 10px 20px 20px 10px;
+  scrollbar-gutter: stable;
+}
+#image-preview-frame {
+  position: relative;
+  width: calc(var(--image-width, 1200) * min(1px, 0.085cqw));
+}
+#image-preview-frame.has-preview { outline: 1px solid #64748b; }
+.image-resize-handle { position: absolute; z-index: 1; width: 18px; height: 18px; touch-action: none; }
+#image-preview-frame:not(.has-preview) .image-resize-handle { visibility: hidden; }
+.image-resize-handle::after { content: ""; position: absolute; inset: 4px; border: 1px solid #475569; border-radius: 2px; background: #fff; }
+.image-resize-handle[data-image-resize="x"] { right: -9px; top: 50%; transform: translateY(-50%); cursor: ew-resize; }
+.image-resize-handle[data-image-resize="y"] { bottom: -9px; left: 50%; transform: translateX(-50%); cursor: ns-resize; }
+.image-resize-handle[data-image-resize="xy"] { right: -9px; bottom: -9px; cursor: nwse-resize; }
 .hint { min-height: 22px; font-variant-numeric: tabular-nums; }
 summary { cursor: pointer; font-weight: 500; }
 .table-scroll, .frequency-table { overflow: auto; }

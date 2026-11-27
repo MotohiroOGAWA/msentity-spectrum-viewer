@@ -41,8 +41,8 @@
           ".mgf"
         ],
         "icon": {
-          "light": "./media/dataset-file-icon.png",
-          "dark": "./media/dataset-file-icon.png"
+          "light": "../external/msentity/media/icon.png",
+          "dark": "../external/msentity/media/icon.png"
         }
       },
       {
@@ -54,8 +54,8 @@
           ".mssim"
         ],
         "icon": {
-          "light": "./media/similarity-file-icon.png",
-          "dark": "./media/similarity-file-icon.png"
+          "light": "../external/msentity-similarity/media/similarity-icon.png",
+          "dark": "../external/msentity-similarity/media/similarity-icon.png"
         }
       }
     ],

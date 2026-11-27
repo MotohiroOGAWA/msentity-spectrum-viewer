@@ -204,8 +204,14 @@ class MSEntityViewerProvider {
 
   async resolveCustomEditor(document, webviewPanel) {
     const isSimilarity = path.extname(document.uri.fsPath).toLowerCase() === ".mssim";
-    webviewPanel.iconPath = vscode.Uri.joinPath(this.context.extensionUri, "media",
-      isSimilarity ? "similarity-file-icon.png" : "dataset-file-icon.png");
+    const languageId = isSimilarity ? "msentity-similarity" : "msentity-dataset";
+    const icon = this.context.extension.packageJSON.contributes.languages.find(({ id }) => id === languageId)?.icon;
+    if (icon) {
+      webviewPanel.iconPath = {
+        light: vscode.Uri.joinPath(this.context.extensionUri, icon.light),
+        dark: vscode.Uri.joinPath(this.context.extensionUri, icon.dark),
+      };
+    }
     const webview = webviewPanel.webview;
     const uiDir = resourceDir(this.context, "ui");
     webview.options = { enableScripts: true, localResourceRoots: [vscode.Uri.file(uiDir)] };

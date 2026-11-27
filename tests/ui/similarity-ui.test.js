@@ -266,13 +266,35 @@ async function browserTests() {
     assert.match(await page.locator("#image-status").innerText(), /greater than/);
     assert.equal(await page.locator("#confirm-image").isDisabled(), true);
     await page.locator("#image-x-max").fill("");
+    const imageSize = async () => Promise.all(["width", "height"].map(async (axis) =>
+      Number(await page.locator(`#image-${axis}`).inputValue())));
+    const dragImage = async (axes, dx, dy) => {
+      const handle = page.locator(`[data-image-resize="${axes}"]`);
+      await handle.scrollIntoViewIfNeeded();
+      const { x, y, width, height } = await handle.boundingBox();
+      await page.mouse.move(x + width / 2, y + height / 2);
+      await page.mouse.down();
+      await page.mouse.move(x + width / 2 + dx, y + height / 2 + dy, { steps: 3 });
+      await page.mouse.up();
+      return imageSize();
+    };
+    const [wider, sameHeight] = await dragImage("x", 24, 8);
+    assert.ok(wider > 640);
+    assert.equal(sameHeight, 480);
+    const [sameWidth, shorter] = await dragImage("y", -8, -24);
+    assert.equal(sameWidth, wider);
+    assert.ok(shorter < sameHeight);
+    const [width, height] = await dragImage("xy", 16, -16);
+    assert.ok(width > wider && height < shorter);
+    assert.equal(await page.locator("#image-preview svg").getAttribute("width"), String(width));
+    assert.equal(await page.locator("#image-preview svg").getAttribute("height"), String(height));
     await page.locator("#image-format").selectOption("svg");
     await page.locator("#confirm-image").click();
     await page.waitForFunction(() => document.querySelector("#confirm-image")?.textContent.includes("Preparing"));
     for (let i = 0; i < 50 && savedImages.length < 1; i++) await new Promise((r) => setTimeout(r, 50));
     assert.equal(savedImages.length, 1, await page.locator('[role="alert"]').allInnerTexts().then(String));
     assert.equal(savedImages[0].filename, "similarity-histogram.svg");
-    assert.match(Buffer.from(savedImages[0].bytes).toString("utf8"), /^<\?xml[^]*<svg[^]*width="640"/);
+    assert.ok(Buffer.from(savedImages[0].bytes).toString("utf8").includes(`width="${width}" height="${height}"`));
     await page.evaluate(() => window.dispatchEvent(new MessageEvent("message", {
       data: { type: "image-save-complete", path: "/tmp/similarity-histogram.svg" }
     })));
@@ -283,6 +305,8 @@ async function browserTests() {
     for (let i = 0; i < 50 && savedImages.length < 2; i++) await new Promise((r) => setTimeout(r, 50));
     assert.equal(savedImages[1].filename, "similarity-box.png");
     assert.deepEqual(savedImages[1].bytes.slice(1, 4), [80, 78, 71]);   // "PNG"
+    const png = Buffer.from(savedImages[1].bytes);
+    assert.deepEqual([png.readUInt32BE(16), png.readUInt32BE(20)], [width, height]);
     await page.evaluate(() => window.dispatchEvent(new MessageEvent("message", { data: { type: "image-save-cancelled" } })));
     await page.locator("#cancel-image").click();
 

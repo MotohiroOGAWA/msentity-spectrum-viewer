@@ -787,7 +787,15 @@
         <label>Count <input id="image-y-min" type="number" min="0" step="any" placeholder="Auto" value="${esc(image.yMin)}" aria-label="Count axis minimum" ${countAxis ? "" : "disabled"}> – <input id="image-y-max" type="number" min="0" step="any" placeholder="Auto" value="${esc(image.yMax)}" aria-label="Count axis maximum" ${countAxis ? "" : "disabled"}></label>
         <button id="reset-image" type="button">Reset</button>
       </div>
-      <div id="image-preview" class="image-preview" aria-label="Image preview"></div>
+      <p class="resize-help">Drag an edge to change width or height, or the corner to change both.</p>
+      <div class="distribution-image-preview image-preview" aria-label="Image preview">
+        <div id="image-preview-frame">
+          <div id="image-preview"></div>
+          <span class="image-resize-handle" data-image-resize="x" aria-hidden="true"></span>
+          <span class="image-resize-handle" data-image-resize="y" aria-hidden="true"></span>
+          <span class="image-resize-handle" data-image-resize="xy" aria-hidden="true"></span>
+        </div>
+      </div>
       <div id="image-status" class="hint" role="status"></div>
       <div class="actions"><button id="cancel-image-bottom" type="button">Cancel</button><button id="confirm-image" type="button" class="primary" ${imageSaving ? "disabled" : ""}>${imageSaving ? "Preparing image…" : "Save…"}</button></div></form></dialog>`;
   }
@@ -809,23 +817,61 @@
     return chartSvg(choice.image.width, choice.image.height, { ...choice.image, type: choice.type, scale: choice.scale }).markup;
   }
 
+  function bindImagePreviewResize(frame, update) {
+    const widthInput = document.getElementById("image-width");
+    const heightInput = document.getElementById("image-height");
+    for (const handle of frame.querySelectorAll("[data-image-resize]")) {
+      const axes = handle.dataset.imageResize;
+      let drag = null;
+      handle.addEventListener("pointerdown", (event) => {
+        if (!event.isPrimary || event.button !== 0 || drag || imageSaving) return;
+        const { width, height } = readImageDialog().image;
+        const scale = frame.getBoundingClientRect().width / width;
+        if (!(scale > 0)) return;
+        drag = { id: event.pointerId, x: event.clientX, y: event.clientY, width, height, scale };
+        handle.setPointerCapture(event.pointerId);
+        event.preventDefault();
+      });
+      handle.addEventListener("pointermove", (event) => {
+        if (drag?.id !== event.pointerId) return;
+        const resize = (input, size, delta) => {
+          input.value = Math.min(Number(input.max), Math.max(Number(input.min), Math.round(size + delta / drag.scale)));
+        };
+        if (axes.includes("x")) resize(widthInput, drag.width, event.clientX - drag.x);
+        if (axes.includes("y")) resize(heightInput, drag.height, event.clientY - drag.y);
+        update(false);
+      });
+      handle.addEventListener("lostpointercapture", (event) => {
+        if (drag?.id !== event.pointerId) return;
+        drag = null;
+        update();
+      });
+    }
+  }
+
   function bindImageDialog() {
     const dialog = document.getElementById("image-dialog");
     const status = document.getElementById("image-status");
-    const update = () => {
+    const frame = document.getElementById("image-preview-frame");
+    const preview = document.getElementById("image-preview");
+    const update = (persist = true) => {
       const choice = readImageDialog();
       const countAxis = choice.type !== "box";
       for (const id of ["image-scale", "image-y-min", "image-y-max"]) document.getElementById(id).disabled = !countAxis;
       image = choice.image;
-      saveState();
-      drawChart();
+      if (persist) {
+        saveState();
+        drawChart();
+      }
       try {
-        document.getElementById("image-preview").innerHTML = imageMarkup(choice);
-        document.getElementById("image-preview").style.aspectRatio = `${image.width} / ${image.height}`;
+        preview.innerHTML = imageMarkup(choice);
+        frame.style.setProperty("--image-width", image.width);
+        frame.classList.add("has-preview");
         status.textContent = `${image.width} × ${image.height} px ${image.format.toUpperCase()}`;
         document.getElementById("confirm-image").disabled = imageSaving;
       } catch (cause) {
-        document.getElementById("image-preview").innerHTML = "";
+        preview.innerHTML = "";
+        frame.classList.remove("has-preview");
         status.textContent = cause.message;
         document.getElementById("confirm-image").disabled = true;
       }
@@ -846,6 +892,7 @@
     document.getElementById("cancel-image").addEventListener("click", close);
     document.getElementById("cancel-image-bottom").addEventListener("click", close);
     document.getElementById("confirm-image").addEventListener("click", saveImage);
+    bindImagePreviewResize(frame, update);
     update();
   }
 

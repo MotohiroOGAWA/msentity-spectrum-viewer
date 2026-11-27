@@ -43,7 +43,7 @@ if (!backend || !fs.existsSync(backend)) {
 const copy = (from, to) => fs.cpSync(from, to, { recursive: true });
 fs.rmSync(stage, { recursive: true, force: true });
 fs.mkdirSync(stage, { recursive: true });
-for (const name of ["extension.js", "CHANGELOG.md", ".vscodeignore", "media"]) {
+for (const name of ["extension.js", "CHANGELOG.md", ".vscodeignore"]) {
   const source = path.join(extensionDir, name);
   if (fs.existsSync(source)) copy(source, path.join(stage, name));
 }
@@ -57,6 +57,19 @@ fs.cpSync(path.join(root, "host"), path.join(stage, "host"), {
 // Manifest: the variant without RDKit says so in its display name.
 const manifest = JSON.parse(fs.readFileSync(path.join(extensionDir, "package.json"), "utf8"));
 if (!withRdkit) manifest.displayName = `${manifest.displayName} (without RDKit)`;
+// File icons are owned by the dependency repositories. Keep the original PNGs
+// under the same dependency-relative paths in the installed extension.
+for (const { icon } of manifest.contributes.languages) {
+  if (!icon) continue;
+  for (const theme of ["light", "dark"]) {
+    const source = path.resolve(extensionDir, icon[theme]);
+    const relative = path.relative(root, source);
+    const destination = path.join(stage, relative);
+    fs.mkdirSync(path.dirname(destination), { recursive: true });
+    if (!fs.existsSync(destination)) fs.copyFileSync(source, destination);
+    icon[theme] = "./" + relative.split(path.sep).join("/");
+  }
+}
 fs.writeFileSync(path.join(stage, "package.json"), `${JSON.stringify(manifest, null, 2)}\n`);
 
 // README: keep the block for this variant (<!-- rdkit:start/end --> or
