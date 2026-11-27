@@ -2,7 +2,7 @@
   "name": "msentity-spectrum-viewer",
   "displayName": "msentity Spectrum Viewer",
   "description": "View msentity datasets (MSDS, MSP, MGF, TSV, CSV) and similarity results (.mssim) in VS Code, powered by the msentity C++ library.",
-  "version": "1.3.2",
+  "version": "1.4.0",
   "publisher": "motohiroogawa",
   "license": "MIT",
   "engines": {
@@ -262,10 +262,24 @@
             "type": "array",
             "items": {
               "type": "string",
-              "enum": ["cosine", "reverse_cosine", "modified_cosine", "bonanza", "entropy", "unweighted_entropy"]
+              "enum": [
+                "cosine",
+                "reverse_cosine",
+                "modified_cosine",
+                "bonanza",
+                "entropy",
+                "unweighted_entropy"
+              ]
             },
             "uniqueItems": true,
-            "default": ["cosine", "reverse_cosine", "modified_cosine", "bonanza", "entropy", "unweighted_entropy"],
+            "default": [
+              "cosine",
+              "reverse_cosine",
+              "modified_cosine",
+              "bonanza",
+              "entropy",
+              "unweighted_entropy"
+            ],
             "description": "Default score column order in the .mssim viewer. Available scores omitted from the list follow in file order."
           },
           "msentitySpectrumViewer.similarity.matchPrecursorMz": {
