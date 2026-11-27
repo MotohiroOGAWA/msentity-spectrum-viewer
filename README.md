@@ -8,6 +8,14 @@ repository is designed to be added to other projects as a **Git submodule**:
 the UI components, the backend, and msentity / msentity-similarity can each be
 used on their own.
 
+## Screenshots
+
+![MSDataset table with spectrum and structure controls](docs/images/dataset-viewer.png)
+
+![Mirrored query and reference spectra with the peak table](docs/images/spectrum-comparison.png)
+
+![Cosine score distribution and the comparison results table](docs/images/similarity-results.png)
+
 ```text
 external/msentity/              msentity (Git submodule): data model, MSDS/MSP/MGF/TSV/CSV
 external/msentity-similarity/   msentity-similarity (Git submodule): scores, .mssim

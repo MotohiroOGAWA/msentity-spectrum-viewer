@@ -1,0 +1,155 @@
+Name: Acetaminophen | Query 01
+SpecID: Acetaminophen-Query-01
+PrecursorMZ: 152.0706
+SMILES: CC(=O)Nc1ccc(O)cc1
+Comment: Synthetic demo spectrum
+Num Peaks: 6
+65.0376	16
+93.0573	45
+102.0000	7
+110.0600	50
+134.0590	81
+152.0706	30
+
+Name: Acetaminophen | Query 02
+SpecID: Acetaminophen-Query-02
+PrecursorMZ: 152.0706
+SMILES: CC(=O)Nc1ccc(O)cc1
+Comment: Synthetic demo spectrum
+Num Peaks: 6
+65.0396	32
+80.0505	71
+104.0000	27
+110.0610	32
+134.0600	38
+152.0696	17
+
+Name: Acetaminophen | Query 03
+SpecID: Acetaminophen-Query-03
+PrecursorMZ: 152.0706
+SMILES: CC(=O)Nc1ccc(O)cc1
+Comment: Synthetic demo spectrum
+Num Peaks: 6
+65.0396	15
+80.0505	18
+93.0583	69
+106.0000	27
+134.0600	85
+152.0706	94
+
+Name: Acetaminophen | Query 04
+SpecID: Acetaminophen-Query-04
+PrecursorMZ: 152.0706
+SMILES: CC(=O)Nc1ccc(O)cc1
+Comment: Synthetic demo spectrum
+Num Peaks: 6
+65.0376	16
+80.0495	79
+93.0573	16
+108.0000	27
+110.0590	72
+152.0706	77
+
+Name: Aspirin | Query 01
+SpecID: Aspirin-Query-01
+PrecursorMZ: 181.0495
+SMILES: CC(=O)Oc1ccccc1C(=O)O
+Comment: Synthetic demo spectrum
+Num Peaks: 6
+65.0386	64
+93.0345	29
+102.0000	27
+121.0294	70
+139.0380	92
+181.0505	42
+
+Name: Aspirin | Query 02
+SpecID: Aspirin-Query-02
+PrecursorMZ: 181.0495
+SMILES: CC(=O)Oc1ccccc1C(=O)O
+Comment: Synthetic demo spectrum
+Num Peaks: 6
+65.0376	98
+77.0386	46
+104.0000	7
+121.0274	29
+139.0400	52
+181.0485	98
+
+Name: Aspirin | Query 03
+SpecID: Aspirin-Query-03
+PrecursorMZ: 181.0495
+SMILES: CC(=O)Oc1ccccc1C(=O)O
+Comment: Synthetic demo spectrum
+Num Peaks: 6
+65.0386	15
+77.0386	97
+93.0335	88
+106.0000	12
+139.0400	49
+181.0495	40
+
+Name: Aspirin | Query 04
+SpecID: Aspirin-Query-04
+PrecursorMZ: 181.0495
+SMILES: CC(=O)Oc1ccccc1C(=O)O
+Comment: Synthetic demo spectrum
+Num Peaks: 6
+65.0396	13
+77.0396	23
+93.0335	89
+108.0000	10
+121.0294	52
+181.0495	74
+
+Name: Caffeine | Query 01
+SpecID: Caffeine-Query-01
+PrecursorMZ: 195.0877
+SMILES: Cn1c(=O)c2c(ncn2C)n(C)c1=O
+Comment: Synthetic demo spectrum
+Num Peaks: 6
+55.0286	66
+83.0614	44
+102.0000	6
+110.0723	24
+138.0672	24
+195.0877	53
+
+Name: Caffeine | Query 02
+SpecID: Caffeine-Query-02
+PrecursorMZ: 195.0877
+SMILES: Cn1c(=O)c2c(ncn2C)n(C)c1=O
+Comment: Synthetic demo spectrum
+Num Peaks: 6
+55.0286	87
+69.0457	21
+104.0000	14
+110.0703	96
+138.0662	19
+195.0877	83
+
+Name: Caffeine | Query 03
+SpecID: Caffeine-Query-03
+PrecursorMZ: 195.0877
+SMILES: Cn1c(=O)c2c(ncn2C)n(C)c1=O
+Comment: Synthetic demo spectrum
+Num Peaks: 6
+55.0286	18
+69.0447	72
+83.0604	19
+106.0000	22
+138.0662	46
+195.0867	87
+
+Name: Caffeine | Query 04
+SpecID: Caffeine-Query-04
+PrecursorMZ: 195.0877
+SMILES: Cn1c(=O)c2c(ncn2C)n(C)c1=O
+Comment: Synthetic demo spectrum
+Num Peaks: 6
+55.0286	50
+69.0437	71
+83.0604	85
+108.0000	23
+110.0703	94
+195.0887	65

@@ -1,9 +1,49 @@
 # msentity Spectrum Viewer for VS Code
 
-Graphical viewer for mass-spectrometry datasets — MSDS, MSP, MGF, TSV, and
-CSV — and for spectrum similarity results (`.mssim`). Data is read by
-[msentity](https://github.com/MotohiroOGAWA/msentity), a C++ library that ships
-inside the extension, so nothing else needs to be installed.
+Inspect mass spectra, compare a query and reference spectrum side by side, and
+explore spectral similarity results inside desktop VS Code. Open
+`.msds`, `.msp`, `.mgf`, and `.mssim` files, or import spectra from TSV and
+CSV. The extension includes the native viewer backend.
+
+**Supported platforms:** Windows x64 and Linux x64.
+<!-- rdkit:start -->
+**RDKit is included** for molecular structure previews and SMARTS filtering.
+<!-- rdkit:end -->
+
+## Quick start
+
+Download [query spectra](https://raw.githubusercontent.com/MotohiroOGAWA/msentity-spectrum-viewer/main/docs/examples/marketplace-query.msp)
+and [precomputed similarity results](https://raw.githubusercontent.com/MotohiroOGAWA/msentity-spectrum-viewer/main/docs/examples/marketplace-similarity.mssim).
+These spectra are synthetic examples for trying the viewer.
+
+1. Open `marketplace-query.msp` in VS Code. Use a **Spectrum** button to view a
+   record's peaks.
+2. Open `marketplace-similarity.mssim`. Choose **Weighted entropy** under
+   **Score** to see its distribution for 36 saved matches.
+3. In **Comparison results**, use **Open spectra** on a row to see the query
+   and reference peaks in a mirrored plot. Use **Export…** to save the
+   comparison table as TSV or CSV.
+
+<!-- rdkit:start -->
+In the query dataset, use a button in the **Structure** column to see a
+molecule rendered from its SMILES field.
+<!-- rdkit:end -->
+
+To repeat the search, also download the
+[reference spectra](https://raw.githubusercontent.com/MotohiroOGAWA/msentity-spectrum-viewer/main/docs/examples/marketplace-reference.msp).
+From the query dataset, choose **More → Calculate similarity → Library search**,
+then select the reference file. Choose **Cosine**, **Weighted entropy**, and
+**Unweighted entropy**. Set the threshold to **0**, use the default fragment
+tolerances (`0.01 Da or 10 ppm`) and intensity exponent (`1`), and keep **Require matching
+precursor m/z** and **Include matched spectra and metadata** checked.
+
+## Screenshots
+
+![MSDataset table with spectrum and structure controls](https://raw.githubusercontent.com/MotohiroOGAWA/msentity-spectrum-viewer/main/docs/images/dataset-viewer.png)
+
+![Mirrored query and reference spectra with the peak table](https://raw.githubusercontent.com/MotohiroOGAWA/msentity-spectrum-viewer/main/docs/images/spectrum-comparison.png)
+
+![Cosine score distribution and the comparison results table](https://raw.githubusercontent.com/MotohiroOGAWA/msentity-spectrum-viewer/main/docs/images/similarity-results.png)
 
 ## Features
 
@@ -19,16 +59,20 @@ inside the extension, so nothing else needs to be installed.
 - SMARTS substructure filtering, 2D structure previews, and structure counts (RDKit, included)
 <!-- rdkit:end -->
 - Multiple datasets in one viewer; drag and drop files to add them
-- Mirrored two-spectrum comparison with dot product, reverse dot product, modified dot product, and BONANZA scores
+- Mirrored two-spectrum comparison with cosine, reverse cosine, modified cosine, BONANZA, and weighted and unweighted spectral entropy scores
 - Library search and key matching saved as `.mssim`, with a dedicated result viewer (histogram, box plot, coverage–similarity density/scatter plot, statistics, filters)
 - Peak table copy/save as TSV or CSV; drag-to-zoom; PNG/SVG export and clipboard copy
 - VS Code light, dark, and high-contrast theme support
 
 ## Install
 
-Download the VSIX for your platform from the
-[Releases](https://github.com/MotohiroOGAWA/msentity-spectrum-viewer/releases)
-page and install it:
+<!-- rdkit:start -->
+In the **Extensions** view in desktop VS Code, search for
+`motohiroogawa.msentity-spectrum-viewer` and choose **Install**.
+<!-- rdkit:end -->
+
+For manual installation, download the VSIX for your platform from
+[GitHub Releases](https://github.com/MotohiroOGAWA/msentity-spectrum-viewer/releases):
 
 ```console
 code --install-extension msentity-spectrum-viewer-<version>-<platform>.vsix
@@ -38,7 +82,7 @@ or use **Extensions → Views and More Actions (...) → Install from VSIX...**.
 Each package contains the viewer backend for one platform: Linux x64
 (`linux-x64`) or Windows x64 (`win32-x64`). macOS is not supported.
 
-Two variants are published for each platform; install one of them:
+GitHub Releases provides two VSIX variants for each platform:
 
 | File | Contents |
 |---|---|
@@ -391,3 +435,9 @@ Logs of the backend: **MS Entity: Show Spectrum Viewer Logs**.
 
 RDKit is distributed under the BSD-3-Clause license; see `THIRD-PARTY-NOTICES.txt`.
 <!-- rdkit:end -->
+
+## Support
+
+Report problems and request changes on
+[GitHub Issues](https://github.com/MotohiroOGAWA/msentity-spectrum-viewer/issues).
+Include the extension version, operating system, and file format.

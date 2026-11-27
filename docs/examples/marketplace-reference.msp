@@ -1,0 +1,116 @@
+Name: Acetaminophen | Reference 01
+SpecID: Acetaminophen-Reference-01
+PrecursorMZ: 152.0706
+SMILES: CC(=O)Nc1ccc(O)cc1
+Comment: Synthetic demo spectrum
+Num Peaks: 6
+65.0386	99
+80.0505	58
+103.0000	14
+110.0610	71
+134.0610	68
+152.0706	73
+
+Name: Acetaminophen | Reference 02
+SpecID: Acetaminophen-Reference-02
+PrecursorMZ: 152.0706
+SMILES: CC(=O)Nc1ccc(O)cc1
+Comment: Synthetic demo spectrum
+Num Peaks: 6
+65.0386	60
+80.0485	29
+93.0563	15
+106.0000	7
+134.0610	100
+152.0706	78
+
+Name: Acetaminophen | Reference 03
+SpecID: Acetaminophen-Reference-03
+PrecursorMZ: 152.0706
+SMILES: CC(=O)Nc1ccc(O)cc1
+Comment: Synthetic demo spectrum
+Num Peaks: 6
+65.0396	88
+80.0505	31
+93.0583	78
+109.0000	8
+110.0600	20
+152.0706	30
+
+Name: Aspirin | Reference 01
+SpecID: Aspirin-Reference-01
+PrecursorMZ: 181.0495
+SMILES: CC(=O)Oc1ccccc1C(=O)O
+Comment: Synthetic demo spectrum
+Num Peaks: 6
+65.0396	41
+77.0386	86
+103.0000	21
+121.0294	58
+139.0390	69
+181.0505	81
+
+Name: Aspirin | Reference 02
+SpecID: Aspirin-Reference-02
+PrecursorMZ: 181.0495
+SMILES: CC(=O)Oc1ccccc1C(=O)O
+Comment: Synthetic demo spectrum
+Num Peaks: 6
+65.0376	67
+77.0396	14
+93.0345	35
+106.0000	9
+139.0400	144
+181.0485	24
+
+Name: Aspirin | Reference 03
+SpecID: Aspirin-Reference-03
+PrecursorMZ: 181.0495
+SMILES: CC(=O)Oc1ccccc1C(=O)O
+Comment: Synthetic demo spectrum
+Num Peaks: 6
+65.0376	82
+77.0386	31
+93.0335	28
+109.0000	10
+121.0294	30
+181.0505	82
+
+Name: Caffeine | Reference 01
+SpecID: Caffeine-Reference-01
+PrecursorMZ: 195.0877
+SMILES: Cn1c(=O)c2c(ncn2C)n(C)c1=O
+Comment: Synthetic demo spectrum
+Num Peaks: 6
+55.0306	54
+69.0437	97
+103.0000	5
+110.0703	57
+138.0652	32
+195.0877	12
+
+Name: Caffeine | Reference 02
+SpecID: Caffeine-Reference-02
+PrecursorMZ: 195.0877
+SMILES: Cn1c(=O)c2c(ncn2C)n(C)c1=O
+Comment: Synthetic demo spectrum
+Num Peaks: 6
+55.0306	66
+69.0447	47
+83.0594	66
+106.0000	20
+138.0672	138
+195.0877	40
+
+Name: Caffeine | Reference 03
+SpecID: Caffeine-Reference-03
+PrecursorMZ: 195.0877
+SMILES: Cn1c(=O)c2c(ncn2C)n(C)c1=O
+Comment: Synthetic demo spectrum
+Num Peaks: 6
+55.0286	82
+69.0447	71
+83.0614	97
+109.0000	22
+110.0713	12
+195.0887	38
