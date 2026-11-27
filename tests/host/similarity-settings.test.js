@@ -21,6 +21,9 @@ test("defaults, overrides, and validation", () => {
   assert.throws(() => similaritySettings({ methods: [] }), /methods/);
   assert.equal(similaritySettings({ precursor_column: " PEPMASS " }).precursor_column, "PEPMASS");
   assert.throws(() => similaritySettings({ precursor_column: 1 }), /precursor_column/);
+  assert.equal(ppm.match_precursor_mz, true);
+  assert.equal(similaritySettings({ match_precursor_mz: false }).match_precursor_mz, false);
+  assert.throws(() => similaritySettings({ match_precursor_mz: "yes" }), /match_precursor_mz/);
   assert.equal(ppm.threads, 1);
   assert.throws(() => similaritySettings({ threads: 0 }), /threads must be an integer >= 1/);
   assert.equal(similaritySettings({ mz_tolerance: "10ppm,0.01da" }).mz_tolerance, "0.01Da,10ppm");
@@ -38,7 +41,7 @@ test("VS Code setting defaults equal SIMILARITY_DEFAULTS", () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, "../../vscode/package.json"), "utf8"));
   const properties = manifest.contributes.configuration.find(group => group.title === "Similarity Calculation").properties;
   const settings = {
-    methods: "methods", threshold: "threshold",
+    methods: "methods", threshold: "threshold", match_precursor_mz: "matchPrecursorMz",
     intensity_exponent: "intensityExponent",
     include_matched_data: "includeMatchedData", threads: "threads",
   };

@@ -51,6 +51,130 @@ test("library search with a loaded and a file reference", { skip }, () => {
   }
 });
 
+test("library search can filter candidates by exact precursor m/z", { skip }, () => {
+  const tmp = tempDir();
+  try {
+    const query = tmp.file("query.tsv", "Name\tPEPMASS\tPeak\nq0\t300 4000\t100,1\nq1\t301\t100,1\nq2\t\t100,1\n");
+    const reference = tmp.file("reference.tsv", "Name\tPrecursorMZ\tPeak\nr0\t300\t100,1\nr1\t300.001\t100,1\nr2\t300\t100,1\nr3\t\t100,1\n");
+    const filtered = tmp.file("filtered.mssim");
+    const all = tmp.file("all.mssim");
+    const messages = runBackend("dataset", query, [
+      { type: "calculate-similarity", mode: "library_search", dataset1: query, reference_path: reference,
+        path: filtered, parameters: { match_precursor_mz: true, methods: ["entropy"] } },
+      { type: "calculate-similarity", mode: "library_search", dataset1: query, reference_path: reference,
+        path: all, parameters: { match_precursor_mz: false } },
+    ]);
+    assert.deepEqual(ofType(messages, "similarity-error"), []);
+    assert.deepEqual(ofType(messages, "similarity-complete").map((result) => result.candidate_pairs), [2, 12]);
+    const progress = ofType(messages, "similarity-progress").filter((message) => message.percent === 100);
+    assert.deepEqual(progress.map(({ processed, total }) => [processed, total]), [[2, 2], [12, 12]]);
+
+    const pages = ofType(resultPage(filtered, [{ type: "page" }, { type: "page", page: 1 }]), "similarity-page");
+    assert.deepEqual(pages.map(({ value }) => [value.rows[0].index1, value.rows[0].index2]), [[0, 0], [0, 2]]);
+    assert.equal(pages[0].value.metadata.parameters.match_precursor_mz, true);
+    assert.equal(pages[0].value.metadata.candidate_pair_count, 2);
+  } finally {
+    tmp.cleanup();
+  }
+});
+
+test("entropy histograms use every matching row for the selected reference", { skip }, () => {
+  const tmp = tempDir();
+  try {
+    const query = tmp.file("query.tsv", "Name\tPeak\nexact\t100,1\npartial\t100,1;200,1\nother\t300,1\n");
+    const reference = tmp.file("reference.tsv", "Name\tPeak\nother\t300,1\nselected\t100,1\n");
+    const output = tmp.file("entropy.mssim");
+    const calculation = runBackend("dataset", query, [
+      { type: "calculate-similarity", mode: "library_search", dataset1: query, reference_path: reference,
+        path: output, parameters: { methods: ["unweighted_entropy", "entropy"], threshold: 0,
+          include_matched_data: false } },
+    ]);
+    assert.equal(ofType(calculation, "similarity-complete").length, 1);
+    const filters = [{ column: "index2", operator: "numeric_eq", value: "1" }];
+    const pages = resultPage(output, [
+      { type: "page", bins: 4, score: "unweighted_entropy", filters },
+      { type: "page", bins: 4, score: "entropy", filters, page: 1 },
+      { type: "page", bins: 4, score: "entropy" },
+    ]);
+    assert.deepEqual(ofType(pages, "error"), []);
+    const [first, second, all] = ofType(pages, "similarity-page").map(({ value }) => value);
+    assert.deepEqual(first.score_columns, ["entropy", "unweighted_entropy"]);
+    assert.equal(first.total_rows, 3);
+    assert.deepEqual(first.histogram.counts, [1, 0, 1, 1]);
+    assert.deepEqual(second.histogram.counts, first.histogram.counts);
+    assert.equal(first.rows[0].index2, 1);
+    assert.equal(second.rows[0].index2, 1);
+    assert.equal(all.total_rows, 6);
+    assert.deepEqual(all.histogram.counts, [3, 0, 1, 2]);
+  } finally {
+    tmp.cleanup();
+  }
+});
+
+test("filters distinguish query and reference metadata and export selected spectrum fields", { skip }, () => {
+  const tmp = tempDir();
+  try {
+    const query = tmp.file("query.tsv", "SpecID\tName\tPeak\n1\tquery only\tmz,intensity,note;100,5,fragment\n2\tother\t200,1\n");
+    const reference = tmp.file("reference.tsv", "SpecID\tName\tPeak\n1\treference only\t100,2\n2\tquery only\t200,3\n");
+    const result = tmp.file("pairs.mssim");
+    const tsv = tmp.file("pairs.tsv");
+    const calc = runBackend("dataset", query, [
+      { type: "add-dataset", path: reference },
+      { type: "calculate-similarity", mode: "by_key", dataset1: query, dataset2: reference,
+        path: result, parameters: { include_matched_data: true } },
+    ]);
+    assert.equal(ofType(calc, "similarity-complete").length, 1);
+    const filter = (column) => [{ column, operator: "text_eq", value: "query only" }];
+    const messages = resultPage(result, [
+      { type: "page", filters: filter("Query.Name") },
+      { type: "page", filters: filter("Reference.Name") },
+      { type: "export", path: tsv, filters: filter("Query.Name"),
+        columns: ["Reference.Name", "Query.Name"], peak_sides: [1, 2] },
+    ]);
+    assert.deepEqual(ofType(messages, "error"), []);
+    const pages = ofType(messages, "similarity-page");
+    assert.deepEqual(pages.map(({ value }) => value.rows[0].index1), [0, 1]);
+    assert.ok(pages[0].value.metadata_columns.some(({ key, side }) => key === "Reference.Name" && side === 2));
+    assert.equal(fs.readFileSync(tsv, "utf8"),
+      "Reference.Name\tQuery.Name\tQuery.Peak\tReference.Peak\nreference only\tquery only\tmz,intensity,note;100,5,fragment\t100,2\n");
+  } finally {
+    tmp.cleanup();
+  }
+});
+
+test("similarity annotations are editable and exported without changing calculation metadata", { skip }, () => {
+  const tmp = tempDir();
+  try {
+    const query = tmp.file("query.tsv", "SpecID\tPeak\n1\t100,1\n");
+    const reference = tmp.file("reference.tsv", "SpecID\tPeak\n1\t100,1\n");
+    const result = tmp.file("original.mssim");
+    const exported = tmp.file("annotated.mssim");
+    runBackend("dataset", query, [
+      { type: "add-dataset", path: reference },
+      { type: "calculate-similarity", dataset1: query, dataset2: reference, path: result },
+    ]);
+    const messages = resultPage(result, [
+      { type: "page" },
+      { type: "set-annotations", description: "Review", tags: ["reviewed", "reviewed"], attributes: { Batch: "A" },
+        parameters: { methods: ["entropy"] } },
+      { type: "export", path: exported },
+      { type: "reload" },
+    ]);
+    assert.deepEqual(ofType(messages, "error"), []);
+    const [original, reloaded] = ofType(messages, "similarity-page").map(({ value }) => value.metadata);
+    const updated = ofType(messages, "similarity-annotations-updated")[0].metadata;
+    assert.deepEqual(updated.parameters, original.parameters);
+    assert.deepEqual(updated.sources, original.sources);
+    assert.deepEqual(updated.annotations, { description: "Review", tags: ["reviewed"], attributes: { Batch: "A" } });
+    assert.deepEqual(reloaded, original);
+    const saved = ofType(resultPage(exported, [{ type: "page" }]), "similarity-page")[0].value.metadata;
+    assert.deepEqual(saved.annotations, updated.annotations);
+    assert.deepEqual(saved.parameters, original.parameters);
+  } finally {
+    tmp.cleanup();
+  }
+});
+
 test("key matching, result filters, histogram, and export", { skip }, () => {
   const tmp = tempDir();
   try {

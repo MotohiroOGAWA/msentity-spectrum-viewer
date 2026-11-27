@@ -139,6 +139,14 @@ try { ({ chromium } = require('playwright')); } catch { chromium = null; }
     await page.locator('#reset-zoom').click();
     assert.deepEqual(await upperPeaks(), fullUpper);
     assert.deepEqual(await lowerPeaks(), fullLower);
+    await send({ type: 'spectrum-comparison', method: 'unweighted_entropy',
+      top: spectrum('experimental', [100], {}),
+      bottom: { ...spectrum('predicted', [99.994, 100], {}), spectrum: { mz: [99.994, 100], intensity: [90, 10] } } });
+    assert.equal(await method(), 'unweighted_entropy');
+    assert.equal(await matched(), 1);
+    assert.equal(await score(), 0.2417);
+    await page.locator('#similarity-method').selectOption('entropy');
+    assert.equal(await score(), 0.5331);
     assert.deepEqual(errors, []);
     console.log('Spectrum comparison tests passed.');
   } finally {

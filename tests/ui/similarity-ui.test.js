@@ -57,7 +57,7 @@ async function wizardTests() {
   // "method" (one name) is still accepted; the backend gets "methods".
   assert.deepEqual(JSON.parse(JSON.stringify(requests[0].parameters)), { methods: ["reverse_cosine"],
     precursor_column: "", threads: 1, mz_tolerance: "10ppm", intensity_exponent: 0.5,
-    include_matched_data: false, threshold: 0.6 });
+    include_matched_data: false, threshold: 0.6, match_precursor_mz: true });
   await submit({ ...library, parameters: { ...library.parameters, method: undefined,
     methods: ["bonanza", "cosine"], precursor_column: "PEPMASS" } });
   assert.deepEqual([...requests[0].parameters.methods], ["cosine", "bonanza"]);
@@ -74,6 +74,7 @@ async function wizardTests() {
   assert.equal(requests[0].parameters.key1, "SpecID");
   assert.equal(requests[0].parameters.key2, "Name");
   assert.equal(requests[0].parameters.threshold, undefined);
+  assert.equal(requests[0].parameters.match_precursor_mz, undefined);
 
   // Invalid choices throw (the host answers similarity-form-error) and send nothing.
   for (const [form, pattern] of [
@@ -129,7 +130,7 @@ async function browserTests() {
   const fixture = spawnSync(backendExecutable, ["dataset", first], { encoding: "utf8",
     input: [{ type: "add-dataset", path: second },
       { type: "calculate-similarity", dataset1: fs.realpathSync(first), dataset2: fs.realpathSync(second), path: file,
-        parameters: { methods: ["cosine", "modified_cosine"] } }]
+        parameters: { methods: ["cosine", "modified_cosine"], include_matched_data: true } }]
       .map((r) => JSON.stringify(r) + "\n").join("") });
   assert.ok(fixture.stdout.includes("similarity-complete"), fixture.stdout + fixture.stderr);
   const server = http.createServer((request, response) => {
@@ -137,7 +138,7 @@ async function browserTests() {
       response.setHeader("Content-Type", "text/html");
       response.end(`<!doctype html><html><head><meta charset="UTF-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src blob:; style-src 'self'; script-src 'nonce-test';">
         <link rel="stylesheet" href="/theme.css"><link rel="stylesheet" href="/similarity.css"></head><body>
-        <div id="app" data-filename="sample.mssim"></div><script nonce="test">window.acquireVsCodeApi = () => ({ getState: () => null, setState: () => {}, postMessage: m => window.sendHostMessage(m) });</script>
+        <div id="app" data-filename="sample.mssim"></div><script nonce="test">window.acquireVsCodeApi = () => ({ getState: () => null, setState: state => { window.resultState = state; }, postMessage: m => window.sendHostMessage(m) });</script>
         <script nonce="test" src="/similarity.js"></script></body></html>`);
     } else if (request.url === "/theme.css") {
       response.setHeader("Content-Type", "text/css");
@@ -163,7 +164,12 @@ async function browserTests() {
         return;
       }
       if (message.type === "webview-ready") return;   // for the host, which this test stands in for
-      const type = { "page-request": "page", "coverage-request": "coverage" }[message.type] || message.type;
+      if (message.type === "export-similarity") {
+        child.stdin.write(JSON.stringify({ ...message, type: "export", path: path.join(temporary, `result.${message.format}`) }) + "\n");
+        return;
+      }
+      const type = { "page-request": "page", "coverage-request": "coverage",
+        "set-similarity-annotations": "set-annotations" }[message.type] || message.type;
       child.stdin.write(JSON.stringify({ ...message, type }) + "\n");
     });
     await page.goto(`http://127.0.0.1:${server.address().port}`);
@@ -178,6 +184,9 @@ async function browserTests() {
       }
     });
     await page.waitForSelector(".stats");
+    for (const [control, icon] of [["reload", "reload"], ["filter", "filter"], ["export", "export"], ["result-more-button", "more"]]) {
+      assert.equal(await page.locator(`#${control} .icon-${icon}[aria-hidden="true"]`).count(), 1);
+    }
     assert.equal(await page.locator(".table-scroll tbody tr").count(), 2);
     assert.ok((await page.locator(".table-scroll").innerText()).includes("<script>bad</script>"));
     await page.locator("#next").click();
@@ -194,15 +203,23 @@ async function browserTests() {
     await page.locator("#filter").click();
     await page.locator("#clear").click();
     await page.waitForFunction(() => document.querySelector(".stats strong").textContent.startsWith("3"));
-    // The key column identifies the pairs of this by-key result: index* and data_index* are hidden.
+    // Source indices are last by default, including for a by-key result.
     assert.deepEqual(await page.locator("[data-sort]").evaluateAll((b) => b.map((e) => e.dataset.sort)),
       ["SpecID", "cosine", "modified_cosine", "peak_intensity_coverage1", "peak_intensity_coverage2",
-        "modified_peak_intensity_coverage1", "modified_peak_intensity_coverage2"]);
+        "modified_peak_intensity_coverage1", "modified_peak_intensity_coverage2", "index1", "index2"]);
     assert.deepEqual(await page.locator("#score-column option").allTextContents(), ["Cosine", "Modified cosine"]);
     assert.match(await page.locator('[data-sort="SpecID"]').innerText(), /^a\.SpecID = b\.SpecID/);
     await page.locator("#bins").fill("2"); await page.locator("#bins").press("Tab");
     await page.waitForFunction(() => document.querySelectorAll(".frequency-table tbody tr").length === 2);
     await page.locator(".distribution summary").click();
+    await page.locator("#reference-index").fill("1");
+    await page.locator("#reference-index").dispatchEvent("change");
+    await page.waitForFunction(() => document.querySelector(".stats strong").textContent.startsWith("1"));
+    assert.match(await page.locator(".distribution h2").innerText(), /Reference index 1/);
+    assert.deepEqual(await page.locator(".frequency-table tbody tr td:nth-child(2)").allTextContents(), ["0", "1"]);
+    await page.locator("#reference-index").fill("");
+    await page.locator("#reference-index").dispatchEvent("change");
+    await page.waitForFunction(() => document.querySelector(".stats strong").textContent.startsWith("3"));
     const counts = await page.locator(".frequency-table tbody tr td:nth-child(2)").allTextContents();
     assert.deepEqual(counts, ["1", "2"]);
     assert.equal(await page.locator(".stats div").count(), 8);
@@ -249,13 +266,35 @@ async function browserTests() {
     assert.match(await page.locator("#image-status").innerText(), /greater than/);
     assert.equal(await page.locator("#confirm-image").isDisabled(), true);
     await page.locator("#image-x-max").fill("");
+    const imageSize = async () => Promise.all(["width", "height"].map(async (axis) =>
+      Number(await page.locator(`#image-${axis}`).inputValue())));
+    const dragImage = async (axes, dx, dy) => {
+      const handle = page.locator(`[data-image-resize="${axes}"]`);
+      await handle.scrollIntoViewIfNeeded();
+      const { x, y, width, height } = await handle.boundingBox();
+      await page.mouse.move(x + width / 2, y + height / 2);
+      await page.mouse.down();
+      await page.mouse.move(x + width / 2 + dx, y + height / 2 + dy, { steps: 3 });
+      await page.mouse.up();
+      return imageSize();
+    };
+    const [wider, sameHeight] = await dragImage("x", 24, 8);
+    assert.ok(wider > 640);
+    assert.equal(sameHeight, 480);
+    const [sameWidth, shorter] = await dragImage("y", -8, -24);
+    assert.equal(sameWidth, wider);
+    assert.ok(shorter < sameHeight);
+    const [width, height] = await dragImage("xy", 16, -16);
+    assert.ok(width > wider && height < shorter);
+    assert.equal(await page.locator("#image-preview svg").getAttribute("width"), String(width));
+    assert.equal(await page.locator("#image-preview svg").getAttribute("height"), String(height));
     await page.locator("#image-format").selectOption("svg");
     await page.locator("#confirm-image").click();
     await page.waitForFunction(() => document.querySelector("#confirm-image")?.textContent.includes("Preparing"));
     for (let i = 0; i < 50 && savedImages.length < 1; i++) await new Promise((r) => setTimeout(r, 50));
     assert.equal(savedImages.length, 1, await page.locator('[role="alert"]').allInnerTexts().then(String));
     assert.equal(savedImages[0].filename, "similarity-histogram.svg");
-    assert.match(Buffer.from(savedImages[0].bytes).toString("utf8"), /^<\?xml[^]*<svg[^]*width="640"/);
+    assert.ok(Buffer.from(savedImages[0].bytes).toString("utf8").includes(`width="${width}" height="${height}"`));
     await page.evaluate(() => window.dispatchEvent(new MessageEvent("message", {
       data: { type: "image-save-complete", path: "/tmp/similarity-histogram.svg" }
     })));
@@ -266,6 +305,8 @@ async function browserTests() {
     for (let i = 0; i < 50 && savedImages.length < 2; i++) await new Promise((r) => setTimeout(r, 50));
     assert.equal(savedImages[1].filename, "similarity-box.png");
     assert.deepEqual(savedImages[1].bytes.slice(1, 4), [80, 78, 71]);   // "PNG"
+    const png = Buffer.from(savedImages[1].bytes);
+    assert.deepEqual([png.readUInt32BE(16), png.readUInt32BE(20)], [width, height]);
     await page.evaluate(() => window.dispatchEvent(new MessageEvent("message", { data: { type: "image-save-cancelled" } })));
     await page.locator("#cancel-image").click();
 
@@ -320,11 +361,92 @@ async function browserTests() {
     await page.waitForSelector('[aria-sort="ascending"]');
     await page.waitForFunction(() => !document.querySelector("#reload").disabled);
     await page.locator('[data-sort="cosine"]').click();
-    await page.waitForFunction(() => document.querySelector(".table-scroll tbody tr td").textContent === "C");
+    await page.waitForFunction(() => document.querySelector(".table-scroll tbody tr td:nth-child(2)").textContent === "C");
+    await page.locator('[data-sort="cosine"]').click();
+    await page.waitForFunction(() => !document.querySelector("#reload").disabled);
+    assert.equal(await page.locator('[data-sort="cosine"]').locator("..").getAttribute("aria-sort"), "none");
+    await page.locator('[data-sort="cosine"]').click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Sort as number (descending)" }).click();
+    await page.waitForFunction(() => !document.querySelector("#reload").disabled);
+    assert.match(await page.locator('[data-sort="cosine"]').innerText(), /123 · 1▼/);
+    await page.locator('[data-sort="index1"]').click();
+    await page.waitForFunction(() => !document.querySelector("#reload").disabled);
+    assert.match(await page.locator('[data-sort="index1"]').innerText(), /2▲/);
     await page.locator("#reload").click();
     await page.waitForFunction(() => !document.querySelector("#reload").disabled);
+    assert.match(await page.locator('[data-sort="cosine"]').innerText(), /123 · 1▼/);
     await page.screenshot({ path: path.join(os.tmpdir(), "msentity-similarity-ui.png"), fullPage: true });
+    await page.evaluate(() => window.dispatchEvent(new MessageEvent("message", {
+      data: { type: "similarity-viewer-config", scoreColumnOrder: ["modified_cosine", "entropy", "cosine"] },
+    })));
+    assert.deepEqual(await page.locator("#score-column option").allTextContents(), ["Modified cosine", "Cosine"]);
+    const columns = () => page.locator("[data-sort]").evaluateAll((buttons) => buttons.map((button) => button.dataset.sort));
+    assert.deepEqual((await columns()).slice(0, 3), ["SpecID", "modified_cosine", "cosine"]);
+    await page.locator("#result-more-button").press("ArrowDown");
+    assert.equal(await page.getByRole("menuitem", { name: "Metadata" }).evaluate((item) => item === document.activeElement), true);
+    await page.keyboard.press("ArrowDown");
+    assert.equal(await page.getByRole("menuitem", { name: "Columns" }).evaluate((item) => item === document.activeElement), true);
+    assert.equal(await page.locator("#result-columns-button .icon-columns").count(), 1);
+    await page.keyboard.press("Enter");
+    await page.locator('[data-result-column="index1"]').uncheck();
+    assert.deepEqual((await columns()).slice(-1), ["index2"]);
+    await page.locator('[data-move-column="cosine"][data-offset="-1"]').click();
+    assert.deepEqual((await columns()).slice(0, 3), ["SpecID", "cosine", "modified_cosine"]);
+    const state = await page.evaluate(() => window.resultState);
+    assert.ok(state.hiddenColumns.includes("index1"));
+    assert.deepEqual(state.columnOrder.slice(0, 3), ["SpecID", "cosine", "modified_cosine"]);
+    await page.locator('#result-columns [data-column-action="reset"]').click();
+    assert.deepEqual((await columns()).slice(0, 3), ["SpecID", "modified_cosine", "cosine"]);
+    assert.deepEqual((await columns()).slice(-2), ["index1", "index2"]);
+    await page.locator("#close-result-columns").click();
+    await page.locator("#result-more-button").click();
+    await page.locator("#result-metadata").click();
+    await page.locator(".result-calculation summary").click();
+    assert.match(await page.locator(".result-metadata").innerText(), /by_key/);
+    assert.equal(await page.locator(".result-metadata").getAttribute("contenteditable"), null);
+    await page.locator("#result-description").fill("Comparison notes");
+    await page.locator("#result-tags").fill("reviewed\nmatched");
+    await page.locator("#add-result-attribute").click();
+    await page.getByLabel("Attribute name").fill("Batch");
+    await page.getByLabel("Attribute value").fill("A");
+    await page.locator("#apply-result-annotations").click();
+    await page.waitForSelector('#result-dialog', { state: "hidden" });
+    assert.equal(await page.locator(".result-heading small").innerText(), "Modified");
+    await page.locator("#result-more-button").click();
+    await page.locator("#result-metadata").click();
+    assert.equal(await page.locator("#result-description").inputValue(), "Comparison notes");
+    assert.equal(await page.getByLabel("Attribute value").inputValue(), "A");
+    await page.keyboard.press("Escape");
+    await page.locator("#result-more-button").click();
+    await page.locator("#result-load-options").click();
+    await page.locator("#result-page-size").fill("1");
+    await page.locator('#result-dialog button[type="submit"]').click();
+    await page.waitForFunction(() => document.querySelector("footer").textContent.includes("Page 1 / 3"));
+    assert.equal(await page.locator(".result-heading small").count(), 0);
+
+    if (!(await page.locator("#add-result-filter").isVisible())) await page.locator("#filter").click();
+    await page.locator("#add-result-filter").click();
+    assert.equal(await page.locator('optgroup[label="Query"] option[value="Query.SpecID"]').count(), 1);
+    await page.locator('[data-filter-field="column"]').selectOption("Reference.SpecID");
+    await page.locator('[data-filter-field="value"]').fill("B");
+    await page.locator("#apply").click();
+    await page.waitForFunction(() => document.querySelector(".stats strong").textContent.startsWith("1"));
+    await page.locator("#export").click();
+    assert.equal(await page.locator("#table-export-format").inputValue(), "tsv");
+    await page.locator("#table-export-format").selectOption("csv");
+    await page.locator("#export-clear-columns").click();
+    await page.locator('[data-export-column="Reference.SpecID"]').check();
+    await page.locator('[data-export-peaks="2"]').check();
+    await page.locator("#confirm-table-export").click();
+    await page.waitForFunction(() => document.querySelector(".message").textContent.includes("Exported 1 rows"));
+    assert.equal(fs.readFileSync(path.join(temporary, "result.csv"), "utf8").replace(/\r\n/g, "\n"),
+      'Reference.SpecID,Reference.Peak\nB,"100,1"\n');
     await page.setViewportSize({ width: 500, height: 800 });
+    await page.locator("#result-more-button").click();
+    const menuBounds = await page.locator("#result-more-actions").boundingBox();
+    assert.ok(menuBounds.x >= 0 && menuBounds.x + menuBounds.width <= 500);
+    await page.keyboard.press("Escape");
+    assert.equal(await page.locator("#result-more-actions").isVisible(), false);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
     assert.deepEqual(errors, []);
   } finally {

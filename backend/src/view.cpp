@@ -17,14 +17,6 @@ double required_number(const json& value, const std::string& message) {
   throw FilterError(message);
 }
 
-bool numeric_match(const std::string& op, double left, double right) {
-  if (op == ">") return left > right;
-  if (op == ">=") return left >= right;
-  if (op == "<") return left < right;
-  if (op == "<=") return left <= right;
-  return left == right;  // numeric_eq
-}
-
 bool is_numeric_operator(const std::string& op) {
   return op == ">" || op == ">=" || op == "<" || op == "<=" || op == "numeric_eq";
 }
@@ -37,7 +29,7 @@ Value filter_value(const json& value) {
   return json_text(value);
 }
 
-msentity::FilterNode filter_node(const MSDataset& dataset, const json& value) {
+msentity::FilterNode filter_node(const json& value, const MSDataset* dataset) {
   if (!value.is_object()) throw FilterError("Filter group children must be objects");
   if (value.contains("children")) {
     std::string logic = fold_case(json_text(value.value("logic", json("and"))));
@@ -45,13 +37,22 @@ msentity::FilterNode filter_node(const MSDataset& dataset, const json& value) {
     msentity::FilterGroup group;
     group.logic = logic == "and" ? msentity::FilterLogic::And : msentity::FilterLogic::Or;
     if (!value["children"].is_array()) throw FilterError("Filter group children must be an array");
-    for (const auto& child : value["children"]) group.children.push_back(filter_node(dataset, child));
+    for (const auto& child : value["children"]) group.children.push_back(filter_node(child, dataset));
     return group;
   }
   std::string op = json_text(value.value("operator", json("text_eq")));
   msentity::FilterCondition condition;
   condition.column = json_text(value.value("column", json("")));
-  condition.value = filter_value(value.value("value", json("")));
+  const auto operand = value.value("value", json(""));
+  condition.value = filter_value(operand);
+  if (!dataset) {
+    condition.case_sensitive = op != "contains";
+    if (is_numeric_operator(op)) {
+      double number = required_number(operand, "Filter value must be numeric");
+      if (!std::isfinite(number)) throw FilterError("Filter value must be finite");
+      condition.value = number;
+    }
+  }
   if (op == "text_eq") condition.op = msentity::FilterOperator::TextEquals;
   else if (op == "!=") condition.op = msentity::FilterOperator::TextNotEquals;
   else if (op == "contains") condition.op = msentity::FilterOperator::Contains;
@@ -76,10 +77,10 @@ msentity::FilterNode filter_node(const MSDataset& dataset, const json& value) {
     condition.precursor_column = json_text(value.value("precursor_column", json("PrecursorMZ")));
   } else if (op == "smarts" || op == "smarts_not_match") throw FilterError("SMARTS filtering requires optional RDKit support");
   else throw FilterError("Unknown filter operator: " + op);
-  if (condition.op != msentity::FilterOperator::RowIds &&
+  if (dataset && condition.op != msentity::FilterOperator::RowIds &&
       condition.op != msentity::FilterOperator::SpectrumPeak &&
       condition.op != msentity::FilterOperator::NeutralLoss &&
-      !dataset.has_column(condition.column)) throw FilterError("Unknown filter column: " + condition.column);
+      !dataset->has_column(condition.column)) throw FilterError("Unknown filter column: " + condition.column);
   return condition;
 }
 
@@ -96,11 +97,11 @@ msentity::FilterGroup filter_group(const MSDataset& dataset, const json& filters
       if (op != "row_ids" && op != "spectrum_peak" && op != "neutral_loss" &&
           op != "is_missing" && op != "is_not_missing" &&
           (!dataset.has_column(column) || raw.is_null() || json_text(raw).empty())) continue;
-      group.children.push_back(filter_node(dataset, item));
+      group.children.push_back(filter_node(item, &dataset));
     }
     return group;
   }
-  auto node = filter_node(dataset, filters);
+  auto node = filter_node(filters, &dataset);
   if (auto* group = std::get_if<msentity::FilterGroup>(&node)) return *group;
   msentity::FilterGroup group;
   group.children.push_back(std::move(node));
@@ -183,69 +184,13 @@ MSDataset apply_dataset_view(const MSDataset& dataset, const json& filters, cons
   return view;
 }
 
-std::vector<int64_t> table_view_rows(
-    int64_t n_rows, const std::vector<std::string>& columns,
-    const std::function<std::vector<Value>(const std::string&)>& column_values,
-    const json& filters, const json& sort) {
-  std::vector<int64_t> rows(static_cast<std::size_t>(n_rows));
-  std::iota(rows.begin(), rows.end(), 0);
-  auto has = [&](const std::string& column) {
-    return std::find(columns.begin(), columns.end(), column) != columns.end();
-  };
-  auto condition_mask = [&](const json& condition) {
-    std::string column = json_text(condition.value("column", json("")));
-    if (!has(column)) throw FilterError("Unknown filter column: " + column);
-    std::string op = json_text(condition.value("operator", json("")));
-    json raw = condition.value("value", json(""));
-    auto values = column_values(column);
-    std::vector<bool> mask(static_cast<std::size_t>(n_rows), false);
-    if (is_numeric_operator(op)) {
-      double right = required_number(raw, "Filter value must be numeric");
-      if (!std::isfinite(right)) throw FilterError("Filter value must be finite");
-      for (int64_t row = 0; row < n_rows; ++row) {
-        auto left = numeric_value(values[static_cast<std::size_t>(row)]);
-        mask[static_cast<std::size_t>(row)] = left && numeric_match(op, *left, right);
-      }
-    } else {
-      if (op != "contains" && op != "text_eq" && op != "!=") {
-        throw FilterError("Unknown filter operator: " + op);
-      }
-      std::string right = json_text(raw);
-      std::string right_folded = fold_case(right);
-      for (int64_t row = 0; row < n_rows; ++row) {
-        std::string left = display_text(values[static_cast<std::size_t>(row)]);
-        bool match = op == "contains" ? fold_case(left).find(right_folded) != std::string::npos
-                     : op == "text_eq" ? left == right
-                                       : left != right;
-        mask[static_cast<std::size_t>(row)] = match;
-      }
-    }
-    return mask;
-  };
-  std::function<std::vector<bool>(const json&)> evaluate = [&](const json& node) {
-    if (!node.is_object() || !node.contains("children")) return condition_mask(node);
-    std::string logic = fold_case(json_text(node.value("logic", json("and"))));
-    if (logic != "and" && logic != "or") throw FilterError("Filter group logic must be AND or OR");
-    if (!node["children"].is_array()) throw FilterError("Filter group children must be an array");
-    std::vector<bool> result(static_cast<std::size_t>(n_rows), logic == "and");
-    for (const auto& child : node["children"]) {
-      auto child_mask = evaluate(child);
-      for (std::size_t i = 0; i < result.size(); ++i) result[i] = logic == "and" ? result[i] && child_mask[i] : result[i] || child_mask[i];
-    }
-    return result;
-  };
-  json root = filters.is_array() ? json{{"logic", "and"}, {"children", filters}} : filters;
-  if (!root.is_null()) {
-    auto mask = evaluate(root);
-    rows.erase(std::remove_if(rows.begin(), rows.end(), [&](int64_t row) { return !mask[static_cast<std::size_t>(row)]; }), rows.end());
-  }
-  if (sort.is_object() && sort.contains("column")) {
-    std::string column = json_text(sort["column"]);
-    if (!has(column)) throw FilterError("Unknown sort column: " + column);
-    rows = sorted_positions(std::move(rows), {column_values(column)},
-                            {json_text(sort.value("direction", json("asc"))) != "desc"});
-  }
-  return rows;
+msentity::FilterGroup similarity_filter_group(const json& filters) {
+  if (filters.is_null()) return {};
+  auto node = filter_node(filters.is_array() ? json{{"logic", "and"}, {"children", filters}} : filters, nullptr);
+  if (auto* group = std::get_if<msentity::FilterGroup>(&node)) return std::move(*group);
+  msentity::FilterGroup group;
+  group.children.push_back(std::move(node));
+  return group;
 }
 
 }  // namespace viewer

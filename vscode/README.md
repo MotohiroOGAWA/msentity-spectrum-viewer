@@ -1,4 +1,4 @@
-<h1><img src="media/icon.png" alt="msentity icon" width="48" height="48" align="center"> msentity Spectrum Viewer for VS Code</h1>
+# msentity Spectrum Viewer for VS Code
 
 Graphical viewer for mass-spectrometry datasets — MSDS, MSP, MGF, TSV, and
 CSV — and for spectrum similarity results (`.mssim`). Data is read by
@@ -180,8 +180,11 @@ score rule, and what is saved — and updates as you edit; a problem with the
 choices is shown there and disables **Calculate and save…**, which then asks
 where to save the result as **`.mssim`**.
 
-A library search compares every spectrum in the query dataset with every
-spectrum in a reference library. The reference can be an entry already loaded
+Library search defaults to **Require matching precursor m/z**. Both spectra
+need the same positive precursor m/z to become a candidate pair. Use
+**Precursor m/z** to select a column or use automatic detection. The Da/ppm
+tolerances apply to fragment peaks. Clear the checkbox to compare all pairs.
+The reference can be an entry already loaded
 with **Add dataset…**, or an MSDS, MSP, MGF, TSV, or CSV file chosen with
 **File…** / **Browse…** for that calculation. Choose one or more methods —
 cosine, reverse cosine, modified cosine, BONANZA; the result has one score
@@ -218,11 +221,24 @@ The `.mssim` file opens in a dedicated **Similarity Viewer**:
 
 - Embedded results show **Open spectra** on each row to open the saved query
   and reference records as a mirrored spectrum comparison.
-- **Filter**: combine numeric comparisons and key/text conditions.
-- Click a column heading to sort; use Previous/Next for paging.
+- **Filter** combines score bounds with numeric and text comparisons. Choose
+  a result column or, when spectra are embedded, a column from **Query** or
+  **Reference**. All conditions must match.
+- Click a column heading to cycle through text ascending, text descending,
+  and unsorted. Right-click a heading for text or numeric sorting in either
+  direction. Adding another column sorts ties using the indicated priority.
+  Open **More → Columns** to show, hide,
+  or move columns in **Comparison results**. **Reset columns** restores the configured
+  score order and puts the source indices at the end. Use **Previous** and
+  **Next** to change pages.
+- Set `msentitySpectrumViewer.similarity.scoreColumnOrder` to choose the
+  default order of score columns when opening a result.
 - The histogram and count/mean/Q1/median/Q3/min/max summarize all filtered rows,
   not just the current page. Choose 1–200 bins; click a bar or use the accessible
   frequency table to filter a similarity range. The final bin includes 1.0.
+- **Reference index** limits the view to saved matches for a single reference
+  spectrum by its zero-based position in the input dataset (`index2`).
+  Clear the field to restore the distribution of all saved matches.
 - Switch between a histogram, a line, and a box plot. Histogram counts support
   linear and log10 scales. With several methods, **All methods** draws the
   frequency of every score column as colored lines over the same bins, with a
@@ -248,13 +264,19 @@ The `.mssim` file opens in a dedicated **Similarity Viewer**:
   added have no coverage columns; recalculate them to use this view.
 - **Save PNG…** opens an image preview where width, height, grid visibility,
   histogram color, box color, and count scale can be changed before saving.
-- **Export…**: save the filtered/sorted results as `.mssim`, TSV, CSV, or Parquet.
-  Only `.mssim` preserves calculation metadata, embedded matched data, and the
-  export filter definition. Unreferenced embedded records are removed.
-- **Reload**: reread the result from disk, retaining active filters. It does not
-  recalculate spectra. Start another calculation from the dataset viewer to do so.
-- Expand **Calculation metadata** to inspect parameters, creation time, input
-  paths, dataset descriptions/attributes/tags, and row counts.
+- **Export…** opens export options for the filtered and sorted rows. For TSV or
+  CSV, choose result columns, embedded query/reference metadata, and either
+  set of peaks. `Query.Peak` and `Reference.Peak` use the same peak-cell format
+  as MSDataset TSV and CSV, including available peak annotations. MSSIM
+  preserves calculation metadata and the matched spectra; Parquet exports
+  the result table.
+- **Reload** rereads the saved result with the current view settings. Use
+  **More → Loading options and reload** to change rows per page before reloading.
+- **More → Metadata** lets you edit the result's description, tags, and
+  attributes. Source details, calculation parameters, and row counts are
+  available in the read-only **Calculation metadata** section. Apply changes
+  to the open result, then export as MSSIM to save the annotations.
+  **More → Settings** opens the VS Code settings for similarity.
 
 The result opens independently of the source files. The file format is
 specified in msentity-similarity's
@@ -337,13 +359,13 @@ discards assignments that have not been exported.
 <!-- rdkit:end -->
 - `msentitySpectrumViewer.similarity.*`: defaults of **Calculate similarity…** —
   `methods` (`["cosine"]`; any of `cosine`, `reverse_cosine`,
-  `modified_cosine`, `bonanza`), `threshold` (`0.8`), `intensityExponent` (`1`),
+  `modified_cosine`, `bonanza`, `entropy`, `unweighted_entropy`), `threshold` (`0.8`), `intensityExponent` (`1`),
   `includeMatchedData` (`true`), `threads` (`1`; at most the logical cores
   minus one, and also editable in the form). The m/z tolerance comes from the
   `spectrumComparison.tolerance*` settings below; `intensityExponent` is also
   the initial exponent when two spectra are compared.
 - `msentitySpectrumViewer.spectrumComparison.method` (`dot`, `reverse`,
-  `modified`, `bonanza`), `toleranceUnit` (`Da or ppm`, `Da`, or `ppm`),
+  `modified`, `bonanza`, `entropy`, `unweighted_entropy`), `toleranceUnit` (`Da or ppm`, `Da`, or `ppm`),
   `toleranceDa` (`0.01`), `tolerancePpm` (`10`), and `precursorColumn`
   (empty to detect automatically, or the metadata column of the precursor m/z): initial score settings when two spectra
   are compared. `toleranceUnit`, `toleranceDa`, and `tolerancePpm` are also

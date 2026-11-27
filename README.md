@@ -52,6 +52,11 @@ cmake --build build                    # build/backend/msentity-viewer-backend
 (cd host && npm install)               # RDKit WebAssembly (optional; chemistry features)
 ```
 
+When developing against a separate checkout of msentity-similarity, configure
+the viewer against that checkout with
+`cmake -S . -B build -DMSENTITY_VIEWER_SIMILARITY_SOURCE_DIR=../msentity-similarity`
+using an absolute path if the build is configured from a different directory.
+
 ## Tests
 
 ```console

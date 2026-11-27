@@ -603,6 +603,8 @@ class DatasetBackend {
         }
       } else if (name == "precursor_column") {
         options.precursor_column = json_text(value);
+      } else if (name == "match_precursor_mz") {
+        options.match_precursor_mz = value.get<bool>();
       } else if (name == "threshold") {
         threshold = value.get<double>();
       } else if (name == "mz_tolerance") {

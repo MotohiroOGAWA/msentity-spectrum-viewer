@@ -61,7 +61,7 @@ function configuredLoadOptions() {
 function configuredSimilaritySettings(host) {
   const config = vscode.workspace.getConfiguration("msentitySpectrumViewer.similarity");
   const names = {
-    methods: "methods", threshold: "threshold",
+    methods: "methods", threshold: "threshold", match_precursor_mz: "matchPrecursorMz",
     intensity_exponent: "intensityExponent",
     include_matched_data: "includeMatchedData", threads: "threads",
   };
@@ -188,7 +188,6 @@ class MSEntityDocument {
 class MSEntityViewerProvider {
   constructor(context) {
     this.context = context;
-    this.iconPath = vscode.Uri.joinPath(context.extensionUri, "media", "editor-icon.png");
     this.spectrumPanels = new Map();
     this.forcedFileTypes = new Map();
     this.forcedLoadOptions = new Map();
@@ -204,11 +203,18 @@ class MSEntityViewerProvider {
   }
 
   async resolveCustomEditor(document, webviewPanel) {
-    webviewPanel.iconPath = this.iconPath;
+    const isSimilarity = path.extname(document.uri.fsPath).toLowerCase() === ".mssim";
+    const languageId = isSimilarity ? "msentity-similarity" : "msentity-dataset";
+    const icon = this.context.extension.packageJSON.contributes.languages.find(({ id }) => id === languageId)?.icon;
+    if (icon) {
+      webviewPanel.iconPath = {
+        light: vscode.Uri.joinPath(this.context.extensionUri, icon.light),
+        dark: vscode.Uri.joinPath(this.context.extensionUri, icon.dark),
+      };
+    }
     const webview = webviewPanel.webview;
     const uiDir = resourceDir(this.context, "ui");
     webview.options = { enableScripts: true, localResourceRoots: [vscode.Uri.file(uiDir)] };
-    const isSimilarity = path.extname(document.uri.fsPath).toLowerCase() === ".mssim";
     webview.html = getDatasetWebviewHtml(webview, uiDir, document.uri, isSimilarity);
 
     const pageSize = configuredPageSize();
@@ -313,7 +319,10 @@ class MSEntityViewerProvider {
       switch (message?.type) {
         case "webview-ready":
           webviewReady = true;
-          if (!isSimilarity) webview.postMessage({ type: "viewer-config", options: { behavior: {
+          if (isSimilarity) webview.postMessage({ type: "similarity-viewer-config",
+            scoreColumnOrder: vscode.workspace.getConfiguration("msentitySpectrumViewer.similarity", document.uri).get("scoreColumnOrder")
+          });
+          else webview.postMessage({ type: "viewer-config", options: { behavior: {
             copyLockedCells: vscode.workspace.getConfiguration("msentitySpectrumViewer").get("copyLockedCells", true) !== false,
             lockedCellCopyGesture: vscode.workspace.getConfiguration("msentitySpectrumViewer").get("lockedCellCopyGesture", "rightClick"),
             showCopyNotifications: vscode.workspace.getConfiguration("msentitySpectrumViewer").get("showCopyNotifications", true) !== false
@@ -334,7 +343,8 @@ class MSEntityViewerProvider {
           writeRequest({
             type: "page", page: Number(message.page) || 0, dataset_id: message.datasetId,
             filters: message.filters, sort: message.sort, columns: message.columns, bins: message.bins,
-            score: message.score, ...configuredStructureOptions()
+            score: message.score, page_size: isSimilarity ? message.page_size : undefined,
+            ...configuredStructureOptions()
           });
           break;
         case "column-value-counts":
@@ -394,7 +404,7 @@ class MSEntityViewerProvider {
         case "open-settings":
           vscode.commands.executeCommand(
             "workbench.action.openSettings",
-            `@ext:${this.context.extension.packageJSON.publisher}.${this.context.extension.packageJSON.name}`
+            `@ext:${this.context.extension.packageJSON.publisher}.${this.context.extension.packageJSON.name}${isSimilarity ? " similarity" : ""}`
           );
           break;
         case "change-load-options": {
@@ -456,7 +466,7 @@ class MSEntityViewerProvider {
         case "reload":
           writeRequest({ type: "reload", dataset_id: message.datasetId, filters: message.filters,
             sort: message.sort, bins: message.bins, score: message.score,
-            page_size: isSimilarity ? undefined : configuredPageSize(),
+            page_size: isSimilarity ? message.page_size : configuredPageSize(),
             load_options: datasetLoadOptions.get(message.datasetId) || configuredLoadOptions(),
             ...configuredStructureOptions() });
           break;
@@ -485,11 +495,10 @@ class MSEntityViewerProvider {
           break;
         case "export-similarity": {
           try {
-            const format = await vscode.window.showQuickPick(["mssim", "tsv", "csv", "parquet"], {
-              title: "Export filtered similarity results",
-              placeHolder: "MSSIM includes metadata; other formats contain the result table only"
-            });
-            if (!format || disposed) { send({ type: "export-cancelled" }); break; }
+            const format = message.format;
+            if (!["tsv", "csv", "mssim", "parquet"].includes(format)) {
+              throw new Error("Choose TSV, CSV, MSSIM, or Parquet.");
+            }
             const name = path.basename(document.uri.fsPath, ".mssim");
             const target = await vscode.window.showSaveDialog({
               defaultUri: vscode.Uri.joinPath(document.uri, "..", `${name}-filtered.${format}`),
@@ -499,10 +508,15 @@ class MSEntityViewerProvider {
             if (path.extname(target.fsPath).toLowerCase() !== `.${format}`) {
               throw new Error(`Use the .${format} extension for this export.`);
             }
-            writeRequest({ type: "export", path: target.fsPath, filters: message.filters, sort: message.sort });
+            const fields = ["tsv", "csv"].includes(format) ? { columns: message.columns, peak_sides: message.peak_sides } : {};
+            writeRequest({ type: "export", path: target.fsPath, filters: message.filters, sort: message.sort, ...fields });
           } catch (error) { send({ type: "error", message: error.message || String(error) }); }
           break;
         }
+        case "set-similarity-annotations":
+          if (isSimilarity) writeRequest({ type: "set-annotations", description: message.description,
+            tags: message.tags, attributes: message.attributes });
+          break;
         case "open-similarity-match":
           writeRequest({ type: "match", row: Number(message.resultIndex), score: message.score });
           break;
@@ -654,6 +668,7 @@ class MSEntityViewerProvider {
       methods: chosen.methods ?? (chosen.method ? [chosen.method] : undefined),
       precursor_column: chosen.precursor_column ?? defaults.precursor_column,
       threshold: chosen.threshold, mz_tolerance: chosen.mz_tolerance,
+      match_precursor_mz: chosen.match_precursor_mz ?? defaults.match_precursor_mz,
       intensity_exponent: chosen.intensity_exponent, include_matched_data: chosen.include_matched_data,
       threads: chosen.threads ?? defaults.threads
     });
@@ -668,6 +683,7 @@ class MSEntityViewerProvider {
     };
     if (mode === "library_search") {
       parameters.threshold = settings.threshold;
+      parameters.match_precursor_mz = settings.match_precursor_mz;
     } else {
       for (const [index, dataset] of [first, second].entries()) {
         const key = chosen[`key${index + 1}`];
@@ -708,7 +724,6 @@ class MSEntityViewerProvider {
           localResourceRoots: [vscode.Uri.file(resourceDir(this.context, "ui"))]
         }
       );
-      panel.iconPath = this.iconPath;
       panel.webview.html = getSpectrumWebviewHtml(panel.webview, resourceDir(this.context, "ui"));
       entry = { panel, ready: false, latest: payload, comparisonBottom, comparisonMethod };
       this.spectrumPanels.set(key, entry);
@@ -812,7 +827,6 @@ class MSEntityViewerProvider {
       "msentity.valueCounts", `Value counts · ${result.column}`, vscode.ViewColumn.Active,
       { enableScripts: true, localResourceRoots: [vscode.Uri.file(uiDir)] }
     );
-    panel.iconPath = this.iconPath;
     const settings = () => {
       const config = vscode.workspace.getConfiguration("msentitySpectrumViewer", documentUri);
       return { mode: config.get("valueCountsViewMode", "scroll"), pageSize: config.get("valueCountsPageSize", 100) };

@@ -93,10 +93,12 @@
   // Calculate similarity form: opened by similarity-options (datasets and the
   // host's defaults); every choice is sent at once as similarity-submit.
   const SIMILARITY_FORM_DEFAULTS = { methods: ["cosine"], precursor_column: "", threshold: 0.8,
+    match_precursor_mz: true,
     mz_tolerance: "0.01Da,10ppm", intensity_exponent: 1, include_matched_data: true };
   // Score methods (one result column each); the last two need a precursor m/z.
   const SIMILARITY_METHODS = [["cosine", "Cosine"], ["reverse_cosine", "Reverse cosine"],
-    ["modified_cosine", "Modified cosine"], ["bonanza", "BONANZA"]];
+    ["modified_cosine", "Modified cosine"], ["bonanza", "BONANZA"],
+    ["entropy", "Weighted entropy"], ["unweighted_entropy", "Unweighted entropy"]];
   const SIMILARITY_PRECURSOR_METHODS = ["modified_cosine", "bonanza"];
   const SIMILARITY_TOLERANCE_UNITS = ["Da or ppm", "Da", "ppm"];
   let similarityForm = null;
@@ -133,6 +135,7 @@
       threshold: String(defaults.threshold), toleranceUnit: tolerance.unit, toleranceDa: tolerance.da, tolerancePpm: tolerance.ppm,
       exponent: String(defaults.intensity_exponent), threads: String(Math.min(threads, maximumThreads)), maximumThreads,
       includeMatchedData: defaults.include_matched_data !== false,
+      matchPrecursorMz: defaults.match_precursor_mz !== false,
       choosingReference: false, submitting: false, error: "",
     };
   }
@@ -178,7 +181,9 @@
       const reference = form.dataset2 === "file"
         ? (form.referencePath ? `every spectrum in ${form.referencePath.split(/[\\/]/).pop()}` : "a reference file")
         : `${spectra(n2, "reference")} (${second?.name || "—"})`;
-      lines.push(`<strong>Library search</strong>: ${spectra(n1, "query")} (${esc(first?.name || "—")}) × ${esc(reference)}${n1 !== null && n2 !== null && form.dataset2 !== "file" ? ` = <strong>${(n1 * n2).toLocaleString()}</strong> pairs` : ""}`);
+      const candidateCount = !form.matchPrecursorMz && n1 !== null && n2 !== null && form.dataset2 !== "file"
+        ? ` = <strong>${(n1 * n2).toLocaleString()}</strong> pairs` : "";
+      lines.push(`<strong>Library search</strong>: ${spectra(n1, "query")} (${esc(first?.name || "—")}) × ${esc(reference)}${candidateCount}`);
     } else {
       lines.push(`<strong>Key matching</strong>: ${esc(first?.name || "—")} <code>${esc(form.key1)}</code> = ${esc(second?.name || "—")} <code>${esc(form.key2)}</code>${n1 !== null && n2 !== null ? ` · at most <strong>${Math.min(n1, n2).toLocaleString()}</strong> pairs` : ""}`);
       lines.push("Missing keys and keys found on only one side are skipped; non-missing keys must be unique.");
@@ -186,8 +191,12 @@
     const tolerance = similarityTolerance(form);
     const methods = SIMILARITY_METHODS.filter(([m]) => form.methods.includes(m)).map(([, label]) => label);
     lines.push(`${methods.length ? esc(methods.join(", ")) : "No method"} similarity · m/z ${tolerance ? esc(tolerance.replace("Da", " Da").replace("ppm", " ppm").replace(",", " or ")) : "—"} · intensity<sup>${esc(form.exponent)}</sup> · ${esc(form.threads)} thread${Number(form.threads) === 1 ? "" : "s"}`);
-    if (form.methods.some(m => SIMILARITY_PRECURSOR_METHODS.includes(m))) {
-      lines.push(`Precursor m/z from ${form.precursorColumn ? `<code>${esc(form.precursorColumn)}</code>` : "PrecursorMZ, precursor_mz, PEPMASS, or ParentMZ"}; pairs without one get an empty modified cosine / BONANZA.`);
+    const filterByPrecursor = form.mode === "library_search" && form.matchPrecursorMz;
+    if (filterByPrecursor || form.methods.some(m => SIMILARITY_PRECURSOR_METHODS.includes(m))) {
+      const column = form.precursorColumn ? `<code>${esc(form.precursorColumn)}</code>` : "PrecursorMZ, precursor_mz, PEPMASS, or ParentMZ";
+      lines.push(`Precursor m/z from ${column}. ${filterByPrecursor
+        ? "Only pairs with exactly equal precursor m/z values are compared. Missing values are skipped."
+        : "Pairs with a missing value get an empty modified cosine / BONANZA."}`);
     }
     lines.push(`${form.mode === "library_search" ? `Saves pairs where ${form.methods.length > 1 ? "any method scores" : "the score is"} ≥ ${esc(form.threshold)}` : "Saves the scores of every matched pair"} ${form.includeMatchedData ? "with the matched spectra and metadata" : "as indices and scores only (lightweight)"}.`);
     lines.push("Uses all spectra of the selected datasets, including unsaved edits; table filters do not apply.");
@@ -207,7 +216,7 @@
     return `<div class="modal-backdrop" id="similarity-backdrop"><section class="similarity-form" role="dialog" aria-modal="true" aria-labelledby="similarity-form-title">
       <header><strong id="similarity-form-title">Calculate similarity</strong><button id="close-similarity-form" class="modal-close" aria-label="Close">×</button></header>
       <fieldset class="similarity-mode"><legend>Pairing</legend>
-        <label><input type="radio" name="similarity-mode" value="library_search" ${libraryMode ? "checked" : ""}> Library search <span>every query × every reference spectrum</span></label>
+        <label><input type="radio" name="similarity-mode" value="library_search" ${libraryMode ? "checked" : ""}> Library search <span>query versus reference spectra</span></label>
         <label><input type="radio" name="similarity-mode" value="by_key" ${libraryMode ? "" : "checked"}> Match by metadata key <span>records sharing the same ID or other key</span></label>
       </fieldset>
       <div class="similarity-grid">
@@ -217,7 +226,8 @@
              <label for="similarity-key1">Key (first)</label>${keySelect("similarity-key1", first, form.key1)}
              <label for="similarity-key2">Key (second)</label>${keySelect("similarity-key2", second, form.key2)}`}
         <span>Methods</span><div class="similarity-methods" role="group" aria-label="Similarity methods">${SIMILARITY_METHODS.map(([m, label]) => `<label class="similarity-check"><input type="checkbox" id="similarity-method-${m}" data-similarity-method="${m}" ${form.methods.includes(m) ? "checked" : ""}> ${esc(label)}</label>`).join("")}</div>
-        ${form.methods.some(m => SIMILARITY_PRECURSOR_METHODS.includes(m)) ? `<label for="similarity-precursor">Precursor m/z</label><select id="similarity-precursor">${option("", "Detect (PrecursorMZ, PEPMASS, …)", !form.precursorColumn)}${[...new Set([...(first?.columns || []), ...(second?.columns || [])])].map(c => option(c, c, c === form.precursorColumn)).join("")}</select>` : ""}
+        ${libraryMode ? `<span>Candidate pairs</span><label class="similarity-check"><input id="similarity-match-precursor" type="checkbox" ${form.matchPrecursorMz ? "checked" : ""}> Require matching precursor m/z</label>` : ""}
+        ${(libraryMode && form.matchPrecursorMz) || form.methods.some(m => SIMILARITY_PRECURSOR_METHODS.includes(m)) ? `<label for="similarity-precursor">Precursor m/z</label><select id="similarity-precursor">${option("", "Detect (PrecursorMZ, PEPMASS, …)", !form.precursorColumn)}${[...new Set([...(first?.columns || []), ...(second?.columns || [])])].map(c => option(c, c, c === form.precursorColumn)).join("")}</select>` : ""}
         ${libraryMode ? `<label for="similarity-threshold">Score threshold</label><input id="similarity-threshold" data-similarity-field="threshold" type="number" min="0" max="1" step="0.05" value="${esc(form.threshold)}">` : ""}
         <label for="similarity-tolerance-unit">m/z tolerance</label><div class="similarity-tolerance"><select id="similarity-tolerance-unit" aria-label="m/z tolerance unit">${SIMILARITY_TOLERANCE_UNITS.map(unit => option(unit, unit, form.toleranceUnit === unit)).join("")}</select>${[["Da", "toleranceDa", 0.001], ["ppm", "tolerancePpm", 1]].filter(([unit]) => form.toleranceUnit.includes(unit)).map(([unit, field, step]) => `<span>±</span><input id="similarity-tolerance-${unit.toLowerCase()}" data-similarity-field="${field}" type="number" min="0" step="${step}" value="${esc(form[field])}" aria-label="m/z tolerance in ${unit}"> ${unit}`).join(" <span>or</span> ")}</div>
         <label for="similarity-exponent">Intensity exponent</label><input id="similarity-exponent" data-similarity-field="exponent" type="number" min="0" step="0.1" value="${esc(form.exponent)}">
@@ -249,6 +259,7 @@
   let exportProgress = null;
   let calculatingSimilarity = false;
   let similarityProgress = null;
+  const similarityProgressText = () => `Calculating similarity…${similarityProgress === null ? "" : ` ${similarityProgress.toFixed(1)}%`}`;
   let assigningSpecId = false;
   let calculatingStructureCounts = false;
   let structureCounts = null;
@@ -574,7 +585,7 @@
               ${showControl("assignSpecId") ? `<button class="more-action" role="menuitem" id="assign-spec-id-button" ${assigningSpecId || loadingPage || exporting ? "disabled" : ""}>${toolbarIcon("specid")}<span class="menu-action-label">${assigningSpecId ? "Assigning SpecID…" : "Assign SpecID"}</span></button>` : ""}
               ${showControl("structureCounts") && chemistryCapabilities.structure_count ? `<button class="more-action" role="menuitem" id="structure-counts-button" ${calculatingStructureCounts || loadingPage ? "disabled" : ""}>${toolbarIcon("structureCount")}<span class="menu-action-label">${calculatingStructureCounts ? "Counting structures…" : "Count SMILES and structures"}</span></button>` : ""}
               <div class="more-actions-divider" role="separator"></div>
-              ${showControl("similarity") ? `<button class="more-action" role="menuitem" id="similarity-button" ${calculatingSimilarity || datasetOptions.length < 1 ? "disabled" : ""} title="Run a library search or compare matching metadata keys">${toolbarIcon("similarity")}<span class="menu-action-label">${calculatingSimilarity ? `Calculating…${similarityProgress == null ? "" : ` ${similarityProgress.toFixed(1)}%`}` : "Calculate similarity"}</span></button>` : ""}
+              ${showControl("similarity") ? `<button class="more-action" role="menuitem" id="similarity-button" ${calculatingSimilarity || datasetOptions.length < 1 ? "disabled" : ""} title="Run a library search or compare matching metadata keys">${toolbarIcon("similarity")}<span class="menu-action-label">${calculatingSimilarity ? similarityProgressText() : "Calculate similarity"}</span></button>` : ""}
               <div class="more-actions-divider" role="separator"></div>
               ${showControl("loadingOptions") ? `<button class="more-action" role="menuitem" id="loading-options-button">${toolbarIcon("reload")}<span class="menu-action-label">Loading options and reload</span></button>` : ""}
               ${showControl("settings") ? `<button class="more-action" role="menuitem" id="settings-button">${toolbarIcon("settings")}<span class="menu-action-label">Settings</span></button>` : ""}
@@ -588,7 +599,7 @@
         <div class="table-wrap" data-dataset-id="${esc(activeDatasetId)}"><table class="dataset-table"><colgroup>${columnKeys.map(key => `<col data-column-key="${esc(key)}">`).join("")}</colgroup><thead><tr><th class="row-column" data-column-key="row">${resizeHandle("row")}Row</th><th class="spectrum-column" data-column-key="spectrum">${resizeHandle("spectrum")}Spectrum</th>${showStructureColumn ? `<th class="structure-column" data-column-key="structure">${resizeHandle("structure")}Structure</th>` : ""}${selectedColumns.map((c) => { const item = sortFor(c), key = `metadata:${c}`; return `<th data-column-key="${esc(key)}"><button class="table-sort" data-sort-column="${esc(c)}" title="Click: text ascending → descending → remove sort. Right-click for sort options.">${esc(c)}<span>${item ? `${item.mode === "numeric" ? "123 · " : ""}${item.priority}${item.direction === "asc" ? "▲" : "▼"}` : ""}</span></button>${resizeHandle(key)}</th>`; }).join("")}</tr></thead><tbody>
           ${pageRows.length ? pageRows.map(({ row, index }) => { const smiles = smilesColumn ? String(row?.[smilesColumn] ?? "").trim() : ""; return `<tr class="${selectedSpectrumIndex === index ? "selected-record" : ""}"><td class="row-column">${rowOffset() + index + 1}</td><td class="spectrum-column"><button class="spectrum-button" data-spectrum-index="${index}" title="Show spectrum ${rowOffset() + index + 1}"><svg viewBox="0 0 28 22"><path d="M2 19h24M4 18V13m4 5V7m4 11v-4m4 4V3m4 15V9m4 9v-7"/></svg></button></td>${showStructureColumn ? `<td class="structure-column">${smiles ? `<button class="structure-button" data-structure-index="${index}" aria-label="View structure" title="View structure"><svg viewBox="0 0 28 24" aria-hidden="true" focusable="false"><path class="structure-edges" d="M14 3 21.8 7.5v9L14 21l-7.8-4.5v-9Z"/><g class="structure-nodes"><circle cx="14" cy="3" r="2.1"/><circle cx="21.8" cy="7.5" r="2.1"/><circle cx="21.8" cy="16.5" r="2.1"/><circle cx="14" cy="21" r="2.1"/><circle cx="6.2" cy="16.5" r="2.1"/><circle cx="6.2" cy="7.5" r="2.1"/></g></svg></button>` : ""}</td>` : ""}${selectedColumns.map((c) => `<td ${editingUnlocked ? 'tabindex="0"' : ""} data-edit-row="${index}" data-edit-column="${esc(c)}" class="${editingUnlocked ? "editable-cell" : "locked-cell"}" title="${editingUnlocked ? `Double-click or press Enter to edit: ${esc(display(row?.[c]))}` : `${viewerOptions.behavior.lockedCellCopyGesture === "leftClick" ? "Click" : "Right-click"} to copy the complete value`}">${esc(display(row?.[c]))}</td>`).join("")}</tr>`; }).join("") : `<tr><td colspan="${selectedColumns.length + 2 + (showStructureColumn ? 1 : 0)}" class="empty">No spectra match the filters.</td></tr>`}
         </tbody></table></div>
-        <div class="pagination"><span>${start}–${end} of ${totalRows()}</span><div class="page-controls"><button id="prev-page" ${page() === 0 || loadingPage ? "disabled" : ""}>‹</button><span><input id="page-input" type="number" min="1" max="${pageCount()}" value="${page() + 1}" ${loadingPage ? "disabled" : ""}/> / ${pageCount()}</span><button id="next-page" ${page() >= pageCount() - 1 || loadingPage ? "disabled" : ""}>›</button></div><span>${loadingPage ? "Loading…" : `${pageSize()} rows/page`}</span></div>
+        <div class="pagination"><div class="pagination-summary"><span>${start}–${end} of ${totalRows()}</span><span id="similarity-progress" class="similarity-progress" role="status">${calculatingSimilarity ? similarityProgressText() : ""}</span></div><div class="page-controls"><button id="prev-page" ${page() === 0 || loadingPage ? "disabled" : ""}>‹</button><span><input id="page-input" type="number" min="1" max="${pageCount()}" value="${page() + 1}" ${loadingPage ? "disabled" : ""}/> / ${pageCount()}</span><button id="next-page" ${page() >= pageCount() - 1 || loadingPage ? "disabled" : ""}>›</button></div><span>${loadingPage ? "Loading…" : `${pageSize()} rows/page`}</span></div>
         ${similarityFormMarkup()}
         ${structurePreview ? `<div class="structure-backdrop" id="structure-backdrop"><section class="structure-preview" role="dialog" aria-modal="true" aria-labelledby="structure-title"><header><strong id="structure-title">Structure</strong><button id="close-structure" class="modal-close" aria-label="Close structure preview">×</button></header><div class="structure-canvas">${structurePreview.url ? `<img src="${esc(structurePreview.url)}" alt="Chemical structure for ${esc(structurePreview.smiles)}">` : `<span>Rendering structure…</span>`}</div><code>${esc(structurePreview.smiles)}</code></section></div>` : ""}
       </div>`;
@@ -904,6 +915,10 @@
       form.methods = SIMILARITY_METHODS.map(([m]) => m).filter(m => chosen.has(m));
       rerender(input.id);
     }));
+    document.getElementById("similarity-match-precursor")?.addEventListener("change", event => {
+      form.matchPrecursorMz = event.target.checked;
+      rerender(event.target.id);
+    });
     document.getElementById("similarity-precursor")?.addEventListener("change", event => { form.precursorColumn = event.target.value; refresh(); });
     for (const [id, field] of [["similarity-key1", "key1"], ["similarity-key2", "key2"]]) {
       document.getElementById(id)?.addEventListener("change", event => { form[field] = event.target.value; refresh(); });
@@ -927,7 +942,8 @@
           methods: form.methods, precursor_column: form.precursorColumn,
           mz_tolerance: similarityTolerance(form), intensity_exponent: Number(form.exponent),
           include_matched_data: form.includeMatchedData, threads: Number(form.threads),
-          ...(libraryMode ? { threshold: Number(form.threshold) } : { key1: form.key1, key2: form.key2 }),
+          ...(libraryMode ? { threshold: Number(form.threshold), match_precursor_mz: form.matchPrecursorMz }
+            : { key1: form.key1, key2: form.key2 }),
         },
       });
       rerender("submit-similarity-form");
@@ -1157,11 +1173,20 @@
     } else if (message?.type === "similarity-start") {
       similarityForm = null;
       calculatingSimilarity = true;
+      similarityProgress = null;
       render();
     } else if (message?.type === "similarity-progress") {
-      calculatingSimilarity = true;
-      similarityProgress = Number.isFinite(Number(message.percent)) ? Number(message.percent) : null;
-      render();
+      similarityProgress = Number.isFinite(message.percent) ? message.percent : null;
+      const status = document.getElementById("similarity-progress");
+      if (calculatingSimilarity && status) {
+        const text = similarityProgressText();
+        status.textContent = text;
+        const menuLabel = document.querySelector("#similarity-button .menu-action-label");
+        if (menuLabel) menuLabel.textContent = text;
+      } else {
+        calculatingSimilarity = true;
+        render();
+      }
     } else if (["similarity-complete", "similarity-cancelled", "similarity-error"].includes(message?.type)) {
       calculatingSimilarity = false;
       if (message.type !== "similarity-complete") similarityForm = null;
