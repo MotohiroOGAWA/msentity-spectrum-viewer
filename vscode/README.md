@@ -68,7 +68,7 @@ precursor m/z** and **Include matched spectra and metadata** checked.
 
 <!-- rdkit:start -->
 In the **Extensions** view in desktop VS Code, search for
-`motohiroogawa.msentity-spectrum-viewer` and choose **Install**.
+`motohiroogawa.msentity-msms-viewer` and choose **Install**.
 <!-- rdkit:end -->
 
 For manual installation, download the VSIX for your platform from
