@@ -29,14 +29,8 @@ class FilterError : public std::invalid_argument {
 MSDataset apply_dataset_view(const MSDataset& dataset, const json& filters, const json& sort,
                              const json& columns = nullptr);
 
-// Positions of the rows of a generic table (the similarity result) that pass
-// `filters`, in the order given by `sort` ({column, direction}). Here text_eq
-// and != are case-sensitive and unknown columns are errors, as in the
-// similarity result viewer.
-std::vector<int64_t> table_view_rows(
-    int64_t n_rows, const std::vector<std::string>& columns,
-    const std::function<std::vector<Value>(const std::string&)>& column_values,
-    const json& filters, const json& sort);
+// Decode the similarity viewer's protocol into a library filter.
+msentity::FilterGroup similarity_filter_group(const json& filters);
 
 // Positions sorted by several keys (stable; missing values last).
 std::vector<int64_t> sorted_positions(std::vector<int64_t> positions,

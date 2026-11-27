@@ -34,10 +34,13 @@ if(MSVC)
 endif()
 
 # ---- msentity and msentity-similarity (Git submodules) ---------------------------------
-foreach(_module msentity msentity-similarity)
-  if(NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/external/${_module}/CMakeLists.txt)
+set(MSENTITY_VIEWER_SIMILARITY_SOURCE_DIR
+  "${CMAKE_CURRENT_SOURCE_DIR}/external/msentity-similarity" CACHE PATH
+  "msentity-similarity source tree used by the viewer")
+foreach(_source "${CMAKE_CURRENT_SOURCE_DIR}/external/msentity" "${MSENTITY_VIEWER_SIMILARITY_SOURCE_DIR}")
+  if(NOT EXISTS "${_source}/CMakeLists.txt")
     message(FATAL_ERROR
-      "external/${_module} is missing. Run: git submodule update --init --recursive")
+      "${_source} is missing. Run: git submodule update --init --recursive")
   endif()
 endforeach()
 
@@ -51,7 +54,8 @@ set(MSENTITY_SIMILARITY_BUILD_C_API OFF CACHE BOOL "Build msentity-similarity's 
 if(NOT DEFINED FETCHCONTENT_SOURCE_DIR_MSENTITY)
   set(FETCHCONTENT_SOURCE_DIR_MSENTITY ${CMAKE_CURRENT_SOURCE_DIR}/external/msentity)
 endif()
-add_subdirectory(external/msentity-similarity)
+add_subdirectory("${MSENTITY_VIEWER_SIMILARITY_SOURCE_DIR}"
+                 "${CMAKE_CURRENT_BINARY_DIR}/external/msentity-similarity")
 
 # ---- backend -------------------------------------------------------------------------------
 if(MSENTITY_VIEWER_BUILD_BACKEND)

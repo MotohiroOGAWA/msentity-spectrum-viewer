@@ -337,7 +337,8 @@ class MSEntityViewerProvider {
           writeRequest({
             type: "page", page: Number(message.page) || 0, dataset_id: message.datasetId,
             filters: message.filters, sort: message.sort, columns: message.columns, bins: message.bins,
-            score: message.score, ...configuredStructureOptions()
+            score: message.score, page_size: isSimilarity ? message.page_size : undefined,
+            ...configuredStructureOptions()
           });
           break;
         case "column-value-counts":
@@ -397,7 +398,7 @@ class MSEntityViewerProvider {
         case "open-settings":
           vscode.commands.executeCommand(
             "workbench.action.openSettings",
-            `@ext:${this.context.extension.packageJSON.publisher}.${this.context.extension.packageJSON.name}`
+            `@ext:${this.context.extension.packageJSON.publisher}.${this.context.extension.packageJSON.name}${isSimilarity ? " similarity" : ""}`
           );
           break;
         case "change-load-options": {
@@ -459,7 +460,7 @@ class MSEntityViewerProvider {
         case "reload":
           writeRequest({ type: "reload", dataset_id: message.datasetId, filters: message.filters,
             sort: message.sort, bins: message.bins, score: message.score,
-            page_size: isSimilarity ? undefined : configuredPageSize(),
+            page_size: isSimilarity ? message.page_size : configuredPageSize(),
             load_options: datasetLoadOptions.get(message.datasetId) || configuredLoadOptions(),
             ...configuredStructureOptions() });
           break;
@@ -488,11 +489,10 @@ class MSEntityViewerProvider {
           break;
         case "export-similarity": {
           try {
-            const format = await vscode.window.showQuickPick(["mssim", "tsv", "csv", "parquet"], {
-              title: "Export filtered similarity results",
-              placeHolder: "MSSIM includes metadata; other formats contain the result table only"
-            });
-            if (!format || disposed) { send({ type: "export-cancelled" }); break; }
+            const format = message.format;
+            if (!["tsv", "csv", "mssim", "parquet"].includes(format)) {
+              throw new Error("Choose TSV, CSV, MSSIM, or Parquet.");
+            }
             const name = path.basename(document.uri.fsPath, ".mssim");
             const target = await vscode.window.showSaveDialog({
               defaultUri: vscode.Uri.joinPath(document.uri, "..", `${name}-filtered.${format}`),
@@ -502,7 +502,8 @@ class MSEntityViewerProvider {
             if (path.extname(target.fsPath).toLowerCase() !== `.${format}`) {
               throw new Error(`Use the .${format} extension for this export.`);
             }
-            writeRequest({ type: "export", path: target.fsPath, filters: message.filters, sort: message.sort });
+            const fields = ["tsv", "csv"].includes(format) ? { columns: message.columns, peak_sides: message.peak_sides } : {};
+            writeRequest({ type: "export", path: target.fsPath, filters: message.filters, sort: message.sort, ...fields });
           } catch (error) { send({ type: "error", message: error.message || String(error) }); }
           break;
         }

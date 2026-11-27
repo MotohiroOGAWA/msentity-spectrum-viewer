@@ -34,6 +34,14 @@
   let columnOrder = Array.isArray(saved.columnOrder) ? saved.columnOrder : [];
   let hiddenColumns = Array.isArray(saved.hiddenColumns) ? saved.hiddenColumns : ["data_index1", "data_index2"];
   let columnsOpen = false;
+  let moreOpen = false;
+  let actionDialog = "";
+  let tableExport = null;
+  let pageSize = Number.isInteger(saved.pageSize) ? saved.pageSize : undefined;
+  let columnFilters = Array.isArray(saved.columnFilters) ? saved.columnFilters : [];
+  let draftColumnFilters = [];
+  const filterOperators = [["text_eq", "Text equals"], ["contains", "Contains"], ["!=", "Text differs"],
+    ["numeric_eq", "="], [">=", "≥"], ["<=", "≤"], [">", ">"], ["<", "<"]];
   let bins = saved.bins || 20;
   let chartType = CHART_TYPES.some(([type]) => type === saved.chartType) ? saved.chartType : "histogram";
   let countScale = saved.countScale === "log" ? "log" : "linear";
@@ -70,6 +78,16 @@
     return [...new Set([...preferred.filter((name) => available.includes(name)), ...available])];
   }
   const scoreColumns = () => orderColumns(scoreColumnOrder, value?.score_columns || []);
+  const sideColumns = () => value?.metadata_columns || [];
+  const filterColumnNames = () => [...comparisonColumns(), ...sideColumns().map(({ key }) => key)];
+  function filterColumnOptions(selected) {
+    return [
+      ["Result", comparisonColumns().map((name) => [name, scoreLabel(name)])],
+      ["Query", sideColumns().filter(({ side }) => side === 1).map(({ key, column }) => [key, column])],
+      ["Reference", sideColumns().filter(({ side }) => side === 2).map(({ key, column }) => [key, column])],
+    ].filter(([, columns]) => columns.length).map(([group, columns]) =>
+      `<optgroup label="${group}">${columns.map(([name, label]) => option(name, label, name === selected)).join("")}</optgroup>`).join("");
+  }
   const isIndex = (name) => /^(data_)?index[12]$/.test(name);
   function comparisonColumns() {
     const columns = value?.columns || [];
@@ -94,6 +112,7 @@
   const resultFilters = (includeScore = true) => [
     referenceIndex !== "" ? { column: "index2", operator: "numeric_eq", value: referenceIndex } : null,
     includeScore && range.min !== "" ? { column: activeScore(), operator: range.minOperator, value: String(range.min) } : null,
+    ...(includeScore ? columnFilters : []),
     includeScore && range.max !== "" ? { column: activeScore(), operator: range.maxOperator, value: String(range.max) } : null,
   ].filter(Boolean);
   const rangeLabelText = (r) => [
@@ -102,12 +121,13 @@
   ].filter(Boolean).join(", ");
 
   function saveState() {
-    vscode.setState({ range, referenceIndex, sort, bins, chartType, countScale, image, view, coverage, score, columnOrder, hiddenColumns });
+    vscode.setState({ range, referenceIndex, sort, bins, chartType, countScale, image, view, coverage, score, columnOrder, hiddenColumns, pageSize, columnFilters });
   }
 
   let coverageFilters = null;   // the filters of the cached coverage answers
   let sentFilters = "";         // the filters of the last page request
-  function request(type = "page-request", page = 0) {
+  let sentSort = null;
+  function request(type = "page-request", page = 0, options = {}) {
     busy = true; error = ""; notice = "";
     if (type === "reload") coverageFilters = null;
     saveState();
@@ -115,7 +135,8 @@
     const knownScores = Boolean(value) && type !== "reload";
     const filters = resultFilters(knownScores);
     sentFilters = JSON.stringify(filters);
-    vscode.postMessage({ type, page, filters, sort, bins, score: knownScores ? activeScore() : undefined });
+    sentSort = knownScores ? sort : null;
+    vscode.postMessage({ type, page, filters, sort: sentSort, bins, page_size: pageSize, score: knownScores ? activeScore() : undefined, ...options });
   }
 
   function render() {
@@ -157,13 +178,21 @@
       <header><div><span class="eyebrow">MSENTITY · SIMILARITY</span><h1>${esc(app.dataset.filename)}</h1>
         <p>${esc(subtitle)}</p>${sharedKey ? `<p class="key-sides">a: ${esc(sourceName(0))} · b: ${esc(sourceName(1))}</p>` : ""}</div>
         <nav aria-label="Result actions">${value ? `<label>Score <select id="score-column" ${disabled}>${scoreColumns().map((name) => option(name, scoreLabel(name), name === activeScore())).join("")}</select></label>` : ""}
-        <button id="filter" ${disabled}>Filter${filterText ? ` (${esc(scoreLabel(activeScore()))} ${esc(filterText)})` : ""}</button>
+        <button id="filter" ${disabled}>Filter${filterText ? ` (${esc(scoreLabel(activeScore()))} ${esc(filterText)})` : ""}${columnFilters.length ? ` · ${columnFilters.length}` : ""}</button>
         <button id="export" ${disabled || !value ? "disabled" : ""}>Export…</button>
-        <button id="reload" ${disabled}>Reload</button></nav></header>
+        <button id="reload" ${disabled}>Reload</button>
+        <div class="result-more"><button id="result-more-button" aria-expanded="${moreOpen}" aria-controls="result-more-actions" ${disabled || !value ? "disabled" : ""}>More …</button>
+          <div id="result-more-actions" ${moreOpen ? "" : "hidden"}>
+            <button id="result-metadata">Metadata</button>
+            <button id="result-columns-button" aria-expanded="${columnsOpen}" aria-controls="result-columns">Columns</button>
+            <button id="result-load-options">Loading options and reload</button>
+            <button id="result-settings">Settings</button>
+          </div>
+        </div></nav></header>
       <div role="status" class="message">${busy ? "Processing…" : esc(notice)}</div>
       ${error ? `<div role="alert" class="error">${esc(error)}</div>` : ""}
       ${showFilters && value ? `<section class="filter-panel"><h2>Filter by ${esc(scoreLabel(activeScore()))}</h2>
-        <p>Leave a bound blank to leave that side open. The filter applies to the table, distribution, statistics, and export.</p>
+        <p>Leave a bound blank to leave that side open. All conditions must match. Filters apply to the table, distribution, statistics, and export.</p>
         <div class="filter-range">
           <input id="range-min" type="number" min="0" max="1" step="0.01" placeholder="0" value="${esc(draftRange.min)}" aria-label="Lower bound">
           <select id="range-min-operator" aria-label="Lower bound comparison">${option(">=", "≤", draftRange.minOperator === ">=")}${option(">", "<", draftRange.minOperator === ">")}</select>
@@ -171,7 +200,13 @@
           <select id="range-max-operator" aria-label="Upper bound comparison">${option("<=", "≤", draftRange.maxOperator === "<=")}${option("<", "<", draftRange.maxOperator === "<")}</select>
           <input id="range-max" type="number" min="0" max="1" step="0.01" placeholder="1" value="${esc(draftRange.max)}" aria-label="Upper bound">
         </div>
-        <div class="actions"><button id="apply" class="primary">Apply</button><button id="clear">Clear</button></div>
+        <div class="result-filter-fields">${draftColumnFilters.map((condition, index) => `<div class="result-filter-row" data-filter-index="${index}">
+          <select data-filter-field="column" aria-label="Filter column">${filterColumnOptions(condition.column)}</select>
+          <select data-filter-field="operator" aria-label="Filter comparison">${filterOperators.map(([name, label]) => option(name, label, name === condition.operator)).join("")}</select>
+          <input data-filter-field="value" aria-label="Filter value" value="${esc(condition.value)}">
+          <button data-remove-filter="${index}" aria-label="Remove filter">×</button>
+        </div>`).join("")}</div>
+        <div class="actions"><button id="add-result-filter">Add column filter</button><button id="apply" class="primary">Apply</button><button id="clear">Clear</button></div>
       </section>` : ""}
       ${value ? `
         <section class="stats" aria-label="Filtered result statistics">
@@ -197,9 +232,9 @@
           ${showCoverage ? "" : methodsChart ? methodTables() : `<details><summary>Frequency table</summary><div class="frequency-table"><table><thead><tr><th>Similarity range</th><th>Count</th></tr></thead>
           <tbody>${value.histogram.counts.map((count, i) => `<tr><td>${rangeLabel(i)}</td><td>${number(count)}</td></tr>`).join("")}</tbody></table></div></details>`}
         </section>
-        <section><div class="section-title"><h2>Comparison results</h2><button id="result-columns-button" aria-expanded="${columnsOpen}" aria-controls="result-columns" ${disabled}>Columns</button></div>
+        <section><div class="section-title"><h2>Comparison results</h2></div>
         ${columnsOpen ? `<div id="result-columns" class="result-columns" aria-label="Result columns">
-          <div class="actions"><button data-column-action="show">Show all</button><button data-column-action="hide">Hide all</button><button data-column-action="reset">Reset columns</button></div>
+          <div class="actions"><button data-column-action="show">Show all</button><button data-column-action="hide">Hide all</button><button data-column-action="reset">Reset columns</button><button id="close-result-columns">Close</button></div>
           <ul>${availableColumns.map((name, index) => `<li><label><input type="checkbox" data-result-column="${esc(name)}" ${hiddenColumns.includes(name) ? "" : "checked"}> ${esc(columnLabel(name))}</label>
             <button data-move-column="${esc(name)}" data-offset="-1" aria-label="Move ${esc(columnLabel(name))} left" ${index === 0 ? "disabled" : ""}>↑</button>
             <button data-move-column="${esc(name)}" data-offset="1" aria-label="Move ${esc(columnLabel(name))} right" ${index === availableColumns.length - 1 ? "disabled" : ""}>↓</button></li>`).join("")}</ul>
@@ -209,14 +244,29 @@
         <div class="table-scroll" ${columns.length || value.has_matched_data ? "" : "hidden"}><table><thead><tr>${value.has_matched_data ? "<th>Match</th>" : ""}${columns.map((column) => `<th aria-sort="${sort?.column === column ? (sort.direction === "asc" ? "ascending" : "descending") : "none"}"><button data-sort="${esc(column)}" ${disabled}>${esc(columnLabel(column))} ${sort?.column === column ? (sort.direction === "asc" ? "↑" : "↓") : "↕"}</button></th>`).join("")}</tr></thead>
         <tbody>${value.rows.length ? value.rows.map((row, index) => `<tr>${value.has_matched_data ? `<td><button data-open-match="${Number(value.result_indices[index])}" ${disabled}>Open spectra</button></td>` : ""}${columns.map((column) => `<td>${(value.score_columns.includes(column) || /^(modified_)?peak_intensity_coverage[12]$/.test(column)) ? number(row[column]) : esc(typeof row[column] === "object" && row[column] !== null ? JSON.stringify(row[column]) : row[column])}</td>`).join("")}</tr>`).join("") : `<tr><td colspan="${columns.length + (value.has_matched_data ? 1 : 0)}" class="empty">No matching rows</td></tr>`}</tbody></table></div>
         <footer><button id="previous" ${busy || value.page === 0 ? "disabled" : ""}>Previous</button><span>Page ${value.page + 1} / ${value.total_pages}</span><button id="next" ${busy || value.page + 1 >= value.total_pages ? "disabled" : ""}>Next</button></footer></section>
-        <details class="metadata"><summary>Calculation metadata</summary><p>Reload reads the saved result. Recalculate from the dataset viewer to use changed spectra.</p><pre>${esc(JSON.stringify(value.metadata, null, 2))}</pre></details>
-      ` : "<p>Opening similarity results…</p>"}
-      ${exportOpen && value ? (showCoverage ? coverageImageDialog() : imageDialog()) : ""}`;
 
-    document.getElementById("result-columns-button")?.addEventListener("click", () => {
-      columnsOpen = !columnsOpen;
+      ` : "<p>Opening similarity results…</p>"}
+      ${exportOpen && value ? (showCoverage ? coverageImageDialog() : imageDialog()) : ""}
+      ${actionDialog && value ? resultDialog() : ""}`;
+
+    document.getElementById("result-more-button")?.addEventListener("click", () => {
+      moreOpen = !moreOpen;
       render();
-      document.getElementById("result-columns-button")?.focus();
+      document.getElementById("result-more-button")?.focus();
+    });
+    document.getElementById("result-columns-button")?.addEventListener("click", () => {
+      columnsOpen = true; moreOpen = false; render();
+      document.getElementById("result-columns")?.querySelector("button")?.focus();
+    });
+    document.getElementById("close-result-columns")?.addEventListener("click", () => {
+      columnsOpen = false; render();
+      document.getElementById("result-more-button")?.focus();
+    });
+    for (const [id, dialog] of [["result-metadata", "metadata"], ["result-load-options", "loading"]]) {
+      document.getElementById(id)?.addEventListener("click", () => { moreOpen = false; actionDialog = dialog; render(); });
+    }
+    document.getElementById("result-settings")?.addEventListener("click", () => {
+      moreOpen = false; render(); vscode.postMessage({ type: "open-settings" });
     });
     document.querySelectorAll("[data-result-column]").forEach((input) => input.addEventListener("change", () => {
       const name = input.dataset.resultColumn;
@@ -237,14 +287,33 @@
       updateColumns(button, "columnAction");
     }));
     document.getElementById("score-column")?.addEventListener("change", (e) => { score = e.target.value; request("page-request", value.page); });
-    document.getElementById("filter")?.addEventListener("click", () => { showFilters = !showFilters; draftRange = { ...range }; render(); });
+    document.getElementById("filter")?.addEventListener("click", () => {
+      showFilters = !showFilters; draftRange = { ...range };
+      draftColumnFilters = columnFilters.map((condition) => ({ ...condition }));
+      render();
+    });
     document.getElementById("reload")?.addEventListener("click", () => request("reload"));
-    document.getElementById("export")?.addEventListener("click", () => request("export-similarity"));
+    document.getElementById("export")?.addEventListener("click", () => {
+      tableExport = { format: "tsv", columns: [...columns], peakSides: [] };
+      actionDialog = "export"; render();
+    });
+    document.getElementById("add-result-filter")?.addEventListener("click", () => {
+      draftColumnFilters.push({ column: filterColumnNames()[0], operator: "text_eq", value: "" });
+      render();
+      [...document.querySelectorAll('[data-filter-field="column"]')].at(-1)?.focus();
+    });
+    document.querySelectorAll("[data-filter-field]").forEach((input) => input.addEventListener("input", () => {
+      draftColumnFilters[Number(input.closest("[data-filter-index]").dataset.filterIndex)][input.dataset.filterField] = input.value;
+    }));
+    document.querySelectorAll("[data-remove-filter]").forEach((button) => button.addEventListener("click", () => {
+      draftColumnFilters.splice(Number(button.dataset.removeFilter), 1); render();
+      document.getElementById("add-result-filter")?.focus();
+    }));
     for (const [id, field] of [["range-min", "min"], ["range-max", "max"], ["range-min-operator", "minOperator"], ["range-max-operator", "maxOperator"]]) {
       document.getElementById(id)?.addEventListener("change", (e) => { draftRange[field] = e.target.value.trim(); });
     }
     document.getElementById("apply")?.addEventListener("click", applyRange);
-    document.getElementById("clear")?.addEventListener("click", () => { range = { ...RANGE_DEFAULTS }; draftRange = { ...range }; request(); });
+    document.getElementById("clear")?.addEventListener("click", () => { range = { ...RANGE_DEFAULTS }; draftRange = { ...range }; columnFilters = []; draftColumnFilters = []; request(); });
     document.getElementById("reference-index")?.addEventListener("change", (e) => {
       const input = e.target;
       if (!input.validity.valid || (input.value !== "" && !Number.isSafeInteger(Number(input.value)))) {
@@ -299,7 +368,76 @@
     }
     if (exportOpen && value && showCoverage) bindCoverageImageDialog();
     else if (exportOpen && value) bindImageDialog();
+    else if (actionDialog && value) bindResultDialog();
     else document.body.classList.remove("modal-open");
+  }
+
+  function resultDialog() {
+    const title = { export: "Export results", metadata: "Calculation metadata", loading: "Loading options and reload" }[actionDialog];
+    let body;
+    if (actionDialog === "metadata") {
+      body = `<pre class="result-metadata">${esc(JSON.stringify(value.metadata, null, 2))}</pre>`;
+    } else if (actionDialog === "loading") {
+      body = `<label>Rows per page <input id="result-page-size" type="number" min="1" max="500" step="1" required value="${value.page_size}"></label>
+        <p>Reload reads the saved .mssim file.</p>
+        <div class="actions"><button class="primary" type="submit">Reload</button></div>`;
+    } else {
+      const text = ["tsv", "csv"].includes(tableExport.format);
+      const exportColumns = [...comparisonColumns(), ...sideColumns().map(({ key }) => key)];
+      body = `<label>Format <select id="table-export-format">${["tsv", "csv", "mssim", "parquet"].map((format) => option(format, format.toUpperCase(), tableExport.format === format)).join("")}</select></label>
+        <p>${number(value.total_rows)} rows in the current filtered and sorted view.</p>
+        ${text ? `<div class="actions"><button id="export-visible-columns" type="button">Use visible columns</button><button id="export-all-columns" type="button">Select all</button><button id="export-clear-columns" type="button">Clear selection</button></div>
+          <fieldset class="export-column-list"><legend>Columns</legend>${exportColumns.map((name) => `<label><input type="checkbox" data-export-column="${esc(name)}" ${tableExport.columns.includes(name) ? "checked" : ""}> ${esc(name)}</label>`).join("")}</fieldset>
+          ${value.has_matched_data ? `<fieldset><legend>Spectrum peaks</legend>
+            ${[[1, "Query"], [2, "Reference"]].map(([side, label]) => `<label><input type="checkbox" data-export-peaks="${side}" ${tableExport.peakSides.includes(side) ? "checked" : ""}> ${label}</label>`).join(" ")}
+            <p>Peak cells use the MSDataset TSV/CSV format.</p></fieldset>` : "<p>This file has no embedded spectra or spectrum metadata.</p>"}` : ""}
+        <div class="actions"><button id="confirm-table-export" class="primary" type="submit" ${text && !tableExport.columns.length && !tableExport.peakSides.length ? "disabled" : ""}>Save…</button></div>`;
+    }
+    return `<dialog id="result-dialog" class="chart-dialog" aria-labelledby="result-dialog-title"><form>
+      <div class="dialog-title"><h2 id="result-dialog-title">${title}</h2><button id="close-result-dialog" type="button" aria-label="Close">×</button></div>${body}</form></dialog>`;
+  }
+
+  function bindResultDialog() {
+    const dialog = document.getElementById("result-dialog");
+    const close = () => { actionDialog = ""; render(); };
+    dialog.addEventListener("cancel", (event) => { event.preventDefault(); close(); });
+    document.getElementById("close-result-dialog").addEventListener("click", close);
+    dialog.querySelector("form").addEventListener("submit", (event) => {
+      event.preventDefault();
+      if (actionDialog === "loading") {
+        pageSize = Number(document.getElementById("result-page-size").value);
+        actionDialog = ""; request("reload"); return;
+      }
+      if (actionDialog !== "export") return;
+      const { format, columns, peakSides } = tableExport;
+      const text = ["tsv", "csv"].includes(format);
+      if (text && !columns.length && !peakSides.length) return;
+      actionDialog = "";
+      request("export-similarity", 0, { format, ...(text ? { columns, peak_sides: peakSides } : {}) });
+    });
+    if (actionDialog === "export") {
+      const format = document.getElementById("table-export-format");
+      format.addEventListener("change", () => { tableExport.format = format.value; render(); });
+      const fields = [...dialog.querySelectorAll("[data-export-column]")];
+      const peaks = [...dialog.querySelectorAll("[data-export-peaks]")];
+      const sync = () => {
+        tableExport.columns = fields.filter(({ checked }) => checked).map(({ dataset }) => dataset.exportColumn);
+        tableExport.peakSides = peaks.filter(({ checked }) => checked).map(({ dataset }) => Number(dataset.exportPeaks));
+        document.getElementById("confirm-table-export").disabled = !tableExport.columns.length && !tableExport.peakSides.length;
+      };
+      [...fields, ...peaks].forEach((input) => input.addEventListener("change", sync));
+      for (const [id, selected] of [
+        ["export-visible-columns", comparisonColumns().filter((name) => !hiddenColumns.includes(name))],
+        ["export-all-columns", fields.map(({ dataset }) => dataset.exportColumn)], ["export-clear-columns", []],
+      ]) {
+        document.getElementById(id)?.addEventListener("click", () => {
+          fields.forEach((input) => { input.checked = selected.includes(input.dataset.exportColumn); });
+          sync();
+        });
+      }
+    }
+    dialog.showModal();
+    document.body.classList.add("modal-open");
   }
 
   function updateColumns(control, key) {
@@ -315,7 +453,12 @@
     const min = bound(draftRange.min), max = bound(draftRange.max);
     if ([min, max].some((n) => n !== "" && !Number.isFinite(n))) { error = "Similarity bounds must be numbers."; render(); return; }
     if (min !== "" && max !== "" && min > max) { error = "The lower bound must not exceed the upper bound."; render(); return; }
+    if (draftColumnFilters.some(({ operator, value }) =>
+      !["text_eq", "contains", "!="].includes(operator) && (String(value).trim() === "" || !Number.isFinite(Number(value))))) {
+      error = "Enter a numeric value for each numeric column filter."; render(); return;
+    }
     range = { ...draftRange };
+    columnFilters = draftColumnFilters.map((condition) => ({ ...condition }));
     showFilters = false;
     request();
   }
@@ -1010,10 +1153,13 @@
         value.score_columns = Object.keys(SCORE_LABELS).filter((name) => value.columns?.includes(name));
         if (!value.score_columns.length) value.score_columns = ["similarity"];
       }
+      // A reloaded file can have a different schema.
+      columnFilters = columnFilters.filter(({ column }) => filterColumnNames().includes(column));
+      if (sort && !value.columns.includes(sort.column)) sort = null;
       // After a reload or a filter change, earlier coverage answers are stale.
       const filters = JSON.stringify(resultFilters());
       // The first request uses the file default until its available score columns are known.
-      if (filters !== sentFilters || (value.score && value.score !== activeScore())) {
+      if (filters !== sentFilters || sort !== sentSort || (value.score && value.score !== activeScore())) {
         request("page-request", value.page); return;
       }
       if (filters !== coverageFilters) {

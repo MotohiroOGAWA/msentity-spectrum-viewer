@@ -114,8 +114,13 @@ class SimilarityBackend {
       try {
         json request = json::parse(line);
         std::string kind = json_text(request.value("type", json()));
-        if (kind == "reload") load();
         if (kind == "page" || kind == "reload") {
+          int page_size = request.value("page_size", page_size_);
+          if (request.contains("page_size") && (page_size < 1 || page_size > 500)) {
+            throw std::invalid_argument("Rows per page must be between 1 and 500");
+          }
+          if (kind == "reload") load();
+          page_size_ = page_size;
           emit({{"type", "similarity-page"}, {"value", page(request)}});
         } else if (kind == "coverage") {
           json payload = coverage(request);
@@ -151,37 +156,13 @@ class SimilarityBackend {
 
   std::vector<int64_t> rows(const json& request) const {
     const auto& result = *result_;
-    return table_view_rows(
-        result.size(), result.columns(),
-        [&](const std::string& column) { return result.column_values(column); },
-        request.value("filters", json::array()), request.value("sort", json()));
-  }
-
-  // The rows of the result in view order, as a SimilarityDataset (for export).
-  sim::SimilarityDataset view_of(const std::vector<int64_t>& order) const {
-    const auto& result = *result_;
-    std::vector<bool> keep(static_cast<std::size_t>(result.size()), false);
-    for (int64_t row : order) keep[static_cast<std::size_t>(row)] = true;
-    if (std::is_sorted(order.begin(), order.end())) return result.filter(keep);
-    // filter() keeps table order: add each row's rank in the view as a
-    // temporary column, filter, sort by it, and drop it.
-    std::vector<int64_t> rank(static_cast<std::size_t>(result.size()), 0);
-    for (std::size_t i = 0; i < order.size(); ++i) {
-      rank[static_cast<std::size_t>(order[i])] = static_cast<int64_t>(i);
+    auto filter = similarity_filter_group(request.value("filters", json::array()));
+    const auto sort = request.value("sort", json());
+    if (sort.is_object() && sort.contains("column")) {
+      return result.row_positions(filter, {json_text(sort["column"])},
+                                  {json_text(sort.value("direction", json("asc"))) != "desc"});
     }
-    arrow::Int64Builder builder;
-    if (!builder.AppendValues(rank).ok()) throw std::runtime_error("cannot build view order");
-    auto table = result.table();
-    auto with_rank = table->AddColumn(table->num_columns(), arrow::field("__view_rank", arrow::int64()),
-                                      std::make_shared<arrow::ChunkedArray>(builder.Finish().ValueOrDie()))
-                         .ValueOrDie();
-    sim::SimilarityDataset ranked(with_rank, result.metadata_json(), result.matched_datasets(),
-                                  result.matched_source_indices());
-    sim::SimilarityDataset ordered = ranked.filter(keep).sort_by({"__view_rank"}, {true});
-    auto ordered_table = ordered.table();
-    auto clean = ordered_table->RemoveColumn(ordered_table->schema()->GetFieldIndex("__view_rank")).ValueOrDie();
-    return sim::SimilarityDataset(clean, ordered.metadata_json(), ordered.matched_datasets(),
-                                  ordered.matched_source_indices());
+    return result.row_positions(filter);
   }
 
   // The score column of a request ("score"; default the first score column).
@@ -246,7 +227,12 @@ class SimilarityBackend {
     if (result.has_matched_data()) {
       matched_rows = {result.matched_datasets()->first.size(), result.matched_datasets()->second.size()};
     }
+    json metadata_columns = json::array();
+    for (const auto& field : result.matched_metadata_columns()) {
+      metadata_columns.push_back({{"side", field.side}, {"column", field.column}, {"key", field.key}});
+    }
     return {{"columns", columns},
+            {"metadata_columns", metadata_columns},
             {"rows", page_rows},
             {"result_indices", indices},
             {"page", page},
@@ -428,10 +414,19 @@ class SimilarityBackend {
   }
 
   int64_t export_result(const json& request) const {
-    std::vector<int64_t> order = rows(request);
-    sim::SimilarityDataset view = view_of(order);
     fs::path path = from_utf8(json_text(request.at("path")));
+    if (fs::exists(path) && fs::equivalent(path, from_utf8(path_))) {
+      throw std::invalid_argument("Export must not overwrite the open similarity file");
+    }
     std::string suffix = fold_case(utf8(path.extension()));
+    sim::SimilarityDataset view = result_->select_rows(rows(request));
+    if ((suffix == ".csv" || suffix == ".tsv") && (request.contains("columns") || request.contains("peak_sides"))) {
+      sim::DelimitedExportOptions options;
+      if (request.contains("columns")) options.columns = request["columns"].get<std::vector<std::string>>();
+      options.peak_sides = request.value("peak_sides", std::vector<int>{});
+      view.export_table(utf8(path), options);
+      return view.size();
+    }
     if (suffix == ".mssim") {
       json metadata = json::parse(view.metadata_json());
       metadata["row_count"] = view.size();

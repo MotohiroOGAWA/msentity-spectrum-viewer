@@ -221,9 +221,11 @@ The `.mssim` file opens in a dedicated **Similarity Viewer**:
 
 - Embedded results show **Open spectra** on each row to open the saved query
   and reference records as a mirrored spectrum comparison.
-- **Filter**: combine numeric comparisons and key/text conditions.
-- Click a column heading to sort rows. In **Comparison results**, use **Columns**
-  to show, hide, or move columns. **Reset columns** restores the configured
+- **Filter** combines score bounds with numeric and text comparisons. Choose
+  a result column or, when spectra are embedded, a column from **Query** or
+  **Reference**. All conditions must match.
+- Click a column heading to sort rows. Open **More → Columns** to show, hide,
+  or move columns in **Comparison results**. **Reset columns** restores the configured
   score order and puts the source indices at the end. Use **Previous** and
   **Next** to change pages.
 - Set `msentitySpectrumViewer.similarity.scoreColumnOrder` to choose the
@@ -259,13 +261,16 @@ The `.mssim` file opens in a dedicated **Similarity Viewer**:
   added have no coverage columns; recalculate them to use this view.
 - **Save PNG…** opens an image preview where width, height, grid visibility,
   histogram color, box color, and count scale can be changed before saving.
-- **Export…**: save the filtered/sorted results as `.mssim`, TSV, CSV, or Parquet.
-  Only `.mssim` preserves calculation metadata, embedded matched data, and the
-  export filter definition. Unreferenced embedded records are removed.
-- **Reload**: reread the result from disk, retaining active filters. It does not
-  recalculate spectra. Start another calculation from the dataset viewer to do so.
-- Expand **Calculation metadata** to inspect parameters, creation time, input
-  paths, dataset descriptions/attributes/tags, and row counts.
+- **Export…** opens export options for the filtered and sorted rows. For TSV or
+  CSV, choose result columns, embedded query/reference metadata, and either
+  set of peaks. `Query.Peak` and `Reference.Peak` use the same peak-cell format
+  as MSDataset TSV and CSV, including available peak annotations. MSSIM
+  preserves calculation metadata and the matched spectra; Parquet exports
+  the result table.
+- **Reload** rereads the saved result with the current view settings. Use
+  **More → Loading options and reload** to change rows per page before reloading.
+- **More → Metadata** opens calculation parameters, input information, and row
+  counts. **More → Settings** opens the VS Code settings for similarity.
 
 The result opens independently of the source files. The file format is
 specified in msentity-similarity's

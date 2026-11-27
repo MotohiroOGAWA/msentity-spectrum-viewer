@@ -177,14 +177,17 @@ over `SIMILARITY_DEFAULTS` and validates them.
 
 | request | fields | answer |
 |---|---|---|
-| `page` (UI: `page-request`) | `page`, `filters`, `sort` {`column`, `direction`}, `bins` (1–200), `score` (the score column of the histogram and statistics; default the first) | `similarity-page` |
+| `page` (UI: `page-request`) | `page`, `filters`, `sort` {`column`, `direction`}, `bins` (1–200), optional `page_size` (1–500), `score` (the score column of the histogram and statistics; default the first) | `similarity-page` |
 | `reload` | as `page` | rereads the file, then `similarity-page` |
 | `coverage` (UI: `coverage-request`) | `filters`, `score` (y axis; default the first score column), `side` (1 or 2), `x_bins`, `y_bins` (1–500, default 20 / `x_bins`), `x_range`, `y_range` ([min, max], default [0, 1]), `max_points` (default 20000), `request_id` (echoed) | `similarity-coverage` |
 | `match` (UI: `open-similarity-match` {`resultIndex`, `score`}) | `row`, `score` | `similarity-match` {`query`, `reference`, `method` (the score column, as the comparison's initial method)} |
-| `export` | `path` (`.mssim`, `.parquet`, `.csv`, `.tsv`), `filters`, `sort` | `export-complete` {`path`, `total_rows`} |
+| `export` | `path` (`.mssim`, `.parquet`, `.csv`, `.tsv`), `filters`, `sort`; TSV/CSV also accept `columns` and `peak_sides` (array of 1 for query, 2 for reference) | `export-complete` {`path`, `total_rows`} |
 
 Errors answer `error` {`message`}. Filters here use the same operators except
 that `text_eq` and `!=` are case-sensitive and unknown columns are errors.
+The page's `metadata_columns` describes fields from embedded spectra as
+`{side, column, key}`. Use its `key` (such as `Query.Name`) in filters and
+TSV/CSV column selection.
 
 `similarity-page`:
 
@@ -294,7 +297,7 @@ Similarity result (`ui/similarity.js`): `webview-ready` as above; `page-request`
 `reload` (both with `page`, `filters`, `sort`, `bins`); `coverage-request` → `coverage`
 (same fields); `open-similarity-match`
 {`resultIndex`} → `match` {`row`}, whose answer opens a `spectrum-comparison`;
-`export-similarity` {`filters`, `sort`} → asks format and path → `export`;
+`export-similarity` {`format`, `filters`, `sort`, `columns`, `peak_sides`} → asks for the path → `export`;
 `save-similarity-image` {`filename`, `bytes`} → saves the file and answers
 `image-save-complete` / `image-save-cancelled` / `image-save-error`.
 

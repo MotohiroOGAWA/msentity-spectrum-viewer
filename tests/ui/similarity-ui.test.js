@@ -130,7 +130,7 @@ async function browserTests() {
   const fixture = spawnSync(backendExecutable, ["dataset", first], { encoding: "utf8",
     input: [{ type: "add-dataset", path: second },
       { type: "calculate-similarity", dataset1: fs.realpathSync(first), dataset2: fs.realpathSync(second), path: file,
-        parameters: { methods: ["cosine", "modified_cosine"] } }]
+        parameters: { methods: ["cosine", "modified_cosine"], include_matched_data: true } }]
       .map((r) => JSON.stringify(r) + "\n").join("") });
   assert.ok(fixture.stdout.includes("similarity-complete"), fixture.stdout + fixture.stderr);
   const server = http.createServer((request, response) => {
@@ -164,6 +164,10 @@ async function browserTests() {
         return;
       }
       if (message.type === "webview-ready") return;   // for the host, which this test stands in for
+      if (message.type === "export-similarity") {
+        child.stdin.write(JSON.stringify({ ...message, type: "export", path: path.join(temporary, `result.${message.format}`) }) + "\n");
+        return;
+      }
       const type = { "page-request": "page", "coverage-request": "coverage" }[message.type] || message.type;
       child.stdin.write(JSON.stringify({ ...message, type }) + "\n");
     });
@@ -329,7 +333,7 @@ async function browserTests() {
     await page.waitForSelector('[aria-sort="ascending"]');
     await page.waitForFunction(() => !document.querySelector("#reload").disabled);
     await page.locator('[data-sort="cosine"]').click();
-    await page.waitForFunction(() => document.querySelector(".table-scroll tbody tr td").textContent === "C");
+    await page.waitForFunction(() => document.querySelector(".table-scroll tbody tr td:nth-child(2)").textContent === "C");
     await page.locator("#reload").click();
     await page.waitForFunction(() => !document.querySelector("#reload").disabled);
     await page.screenshot({ path: path.join(os.tmpdir(), "msentity-similarity-ui.png"), fullPage: true });
@@ -339,6 +343,7 @@ async function browserTests() {
     assert.deepEqual(await page.locator("#score-column option").allTextContents(), ["Modified cosine", "Cosine"]);
     const columns = () => page.locator("[data-sort]").evaluateAll((buttons) => buttons.map((button) => button.dataset.sort));
     assert.deepEqual((await columns()).slice(0, 3), ["SpecID", "modified_cosine", "cosine"]);
+    await page.locator("#result-more-button").click();
     await page.locator("#result-columns-button").click();
     await page.locator('[data-result-column="index1"]').uncheck();
     assert.deepEqual((await columns()).slice(-1), ["index2"]);
@@ -350,6 +355,34 @@ async function browserTests() {
     await page.locator('#result-columns [data-column-action="reset"]').click();
     assert.deepEqual((await columns()).slice(0, 3), ["SpecID", "modified_cosine", "cosine"]);
     assert.deepEqual((await columns()).slice(-2), ["index1", "index2"]);
+    await page.locator("#close-result-columns").click();
+    await page.locator("#result-more-button").click();
+    await page.locator("#result-metadata").click();
+    assert.match(await page.locator(".result-metadata").innerText(), /by_key/);
+    await page.keyboard.press("Escape");
+    await page.locator("#result-more-button").click();
+    await page.locator("#result-load-options").click();
+    await page.locator("#result-page-size").fill("1");
+    await page.locator('#result-dialog button[type="submit"]').click();
+    await page.waitForFunction(() => document.querySelector("footer").textContent.includes("Page 1 / 3"));
+
+    if (!(await page.locator("#add-result-filter").isVisible())) await page.locator("#filter").click();
+    await page.locator("#add-result-filter").click();
+    assert.equal(await page.locator('optgroup[label="Query"] option[value="Query.SpecID"]').count(), 1);
+    await page.locator('[data-filter-field="column"]').selectOption("Reference.SpecID");
+    await page.locator('[data-filter-field="value"]').fill("B");
+    await page.locator("#apply").click();
+    await page.waitForFunction(() => document.querySelector(".stats strong").textContent.startsWith("1"));
+    await page.locator("#export").click();
+    assert.equal(await page.locator("#table-export-format").inputValue(), "tsv");
+    await page.locator("#table-export-format").selectOption("csv");
+    await page.locator("#export-clear-columns").click();
+    await page.locator('[data-export-column="Reference.SpecID"]').check();
+    await page.locator('[data-export-peaks="2"]').check();
+    await page.locator("#confirm-table-export").click();
+    await page.waitForFunction(() => document.querySelector(".message").textContent.includes("Exported 1 rows"));
+    assert.equal(fs.readFileSync(path.join(temporary, "result.csv"), "utf8").replace(/\r\n/g, "\n"),
+      'Reference.SpecID,Reference.Peak\nB,"100,1"\n');
     await page.setViewportSize({ width: 500, height: 800 });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
     assert.deepEqual(errors, []);
