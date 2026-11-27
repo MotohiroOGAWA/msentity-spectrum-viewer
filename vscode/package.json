@@ -1,6 +1,6 @@
 {
   "name": "msentity-msms-viewer",
-  "displayName": "msentity Spectrum Viewer",
+  "displayName": "msentity MSMS Viewer",
   "description": "View msentity datasets (MSDS, MSP, MGF, TSV, CSV) and similarity results (.mssim) in VS Code, powered by the msentity C++ library.",
   "version": "1.4.1",
   "publisher": "motohiroogawa",
