@@ -57,17 +57,21 @@ fs.cpSync(path.join(root, "host"), path.join(stage, "host"), {
 // Manifest: the variant without RDKit says so in its display name.
 const manifest = JSON.parse(fs.readFileSync(path.join(extensionDir, "package.json"), "utf8"));
 if (!withRdkit) manifest.displayName = `${manifest.displayName} (without RDKit)`;
-// File icons are owned by the dependency repositories. Keep the original PNGs
-// under the same dependency-relative paths in the installed extension.
+// Keep the original dependency PNGs under their repository-relative paths.
+function stageIcon(iconPath) {
+  const source = path.resolve(extensionDir, iconPath);
+  const relative = path.relative(root, source);
+  const destination = path.join(stage, relative);
+  fs.mkdirSync(path.dirname(destination), { recursive: true });
+  if (!fs.existsSync(destination)) fs.copyFileSync(source, destination);
+  return "./" + relative.split(path.sep).join("/");
+}
+
+manifest.icon = stageIcon(manifest.icon);
 for (const { icon } of manifest.contributes.languages) {
   if (!icon) continue;
   for (const theme of ["light", "dark"]) {
-    const source = path.resolve(extensionDir, icon[theme]);
-    const relative = path.relative(root, source);
-    const destination = path.join(stage, relative);
-    fs.mkdirSync(path.dirname(destination), { recursive: true });
-    if (!fs.existsSync(destination)) fs.copyFileSync(source, destination);
-    icon[theme] = "./" + relative.split(path.sep).join("/");
+    icon[theme] = stageIcon(icon[theme]);
   }
 }
 fs.writeFileSync(path.join(stage, "package.json"), `${JSON.stringify(manifest, null, 2)}\n`);
