@@ -28,13 +28,18 @@ try { ({ chromium } = require('playwright')); } catch { chromium = null; }
     await show('SpecID', 'SourceSpecID', ['SpecID', 'SourceSpecID', 'index1', 'index2', 'cosine']);
     assert.match(await subtitle(), /· SpecID = SourceSpecID/);
     assert.equal(await page.locator('.key-sides').count(), 0);
-    assert.deepEqual(await headers(), [['SpecID', 'SpecID ↕'], ['SourceSpecID', 'SourceSpecID ↕'], ['cosine', 'cosine ↕']]);   // keys identify the pairs: no index columns
+    assert.deepEqual(await headers(), [
+      ['SpecID', 'SpecID'], ['SourceSpecID', 'SourceSpecID'], ['cosine', 'cosine'],
+      ['index1', 'index1'], ['index2', 'index2'],
+    ]);
 
     // The same name on both sides: one column, qualified as in SQL, with the datasets a and b.
     await show('SpecID', 'SpecID', ['SpecID', 'index1', 'index2', 'cosine']);
     assert.match(await subtitle(), /· a\.SpecID = b\.SpecID/);
     assert.equal(await page.locator('.key-sides').innerText(), 'a: mona.msds · b: cfmid.msds');
-    assert.deepEqual((await headers())[0], ['SpecID', 'a.SpecID = b.SpecID ↕']);   // sorts by the real column
+    assert.deepEqual(await headers(), [
+      ['SpecID', 'a.SpecID = b.SpecID'], ['cosine', 'cosine'], ['index1', 'index1'], ['index2', 'index2'],
+    ]);
     assert.deepEqual(errors, []);
     console.log('Similarity key tests passed.');
   } finally {

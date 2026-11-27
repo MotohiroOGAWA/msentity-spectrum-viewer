@@ -54,8 +54,17 @@ try { ({ chromium } = require('playwright')); } catch { chromium = null; }
     await neutralLoss.check();
     assert.equal(await productIon.isChecked(), false);
     assert.equal(await neutralLoss.isChecked(), true);
-    await page.locator('#apply-filters').click(); assert.equal((await last()).filters.length, 2); await datasetPage('original');
-    assert.equal((await last()).filters[1].operator, 'neutral_loss');
+    await page.locator('#apply-filters').click();
+    const filterRequest = await last();
+    assert.equal(filterRequest.type, 'page-request');
+    assert.equal(filterRequest.filters.logic, 'and');
+    assert.equal(filterRequest.filters.children.length, 2);
+    const [metadataFilter, peakFilter] = filterRequest.filters.children;
+    assert.equal(metadataFilter.operator, 'text_eq');
+    assert.deepEqual(
+      [peakFilter.operator, peakFilter.mz, peakFilter.tolerance, peakFilter.tolerance_unit, peakFilter.intensity],
+      ['neutral_loss', '123.45', '10', 'ppm', '0.4']);
+    await datasetPage('original');
     assert.match(await page.locator('#filter-button').textContent(), /2/); await open();
     await page.locator('#metadata-button').click(); assert.equal(await page.locator('.metadata-panel').isVisible(), true); assert.equal(await visible(), false);
     await page.locator('#cancel-metadata').click();

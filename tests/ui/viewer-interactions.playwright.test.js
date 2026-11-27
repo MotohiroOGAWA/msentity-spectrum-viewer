@@ -109,12 +109,14 @@ test("locked cell left-click preserves the table without copying by default", { 
 });
 
 test("locked cell click remains stable after applying a filter", { skip }, async () => {
-  const { browser, page } = await openViewer();
+  const { browser, page } = await openViewer({ holdPageReply: true });
   try {
     await page.locator("#filter-button").click();
     await page.locator("#add-filter").click();
     await page.locator("#apply-filters").click();
-    await page.waitForFunction(() => !document.querySelector(".table-wrap")?.classList.contains("page-loading"));
+    await page.waitForFunction(() => typeof window.replyToPageRequest === "function");
+    await page.evaluate(() => window.replyToPageRequest());
+    await page.waitForFunction(() => document.querySelector(".pagination")?.textContent.includes("rows/page"));
     const selector = '[data-edit-column="Column_13"]';
     await page.evaluate(() => { const wrap = document.querySelector(".table-wrap"); wrap.scrollLeft = wrap.scrollWidth - wrap.clientWidth - 80; });
     const before = await snapshot(page, selector);
