@@ -96,7 +96,8 @@
     mz_tolerance: "0.01Da,10ppm", intensity_exponent: 1, include_matched_data: true };
   // Score methods (one result column each); the last two need a precursor m/z.
   const SIMILARITY_METHODS = [["cosine", "Cosine"], ["reverse_cosine", "Reverse cosine"],
-    ["modified_cosine", "Modified cosine"], ["bonanza", "BONANZA"]];
+    ["modified_cosine", "Modified cosine"], ["bonanza", "BONANZA"],
+    ["entropy", "Weighted entropy"], ["unweighted_entropy", "Unweighted entropy"]];
   const SIMILARITY_PRECURSOR_METHODS = ["modified_cosine", "bonanza"];
   const SIMILARITY_TOLERANCE_UNITS = ["Da or ppm", "Da", "ppm"];
   let similarityForm = null;

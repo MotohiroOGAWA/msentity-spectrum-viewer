@@ -12,7 +12,8 @@
   // "methods": the frequency of every score column as lines, to compare methods.
   const CHART_TYPES = [["histogram", "Histogram"], ["line", "Line"], ["box", "Box plot"], ["methods", "All methods"]];
   // Line colors of the score columns in the "All methods" plot.
-  const METHOD_COLORS = { cosine: "#3794ff", reverse_cosine: "#d18616", modified_cosine: "#2e9e4f", bonanza: "#b04fc4", similarity: "#3794ff" };
+  const METHOD_COLORS = { cosine: "#3794ff", reverse_cosine: "#d18616", modified_cosine: "#2e9e4f", bonanza: "#b04fc4",
+    entropy: "#008b8b", unweighted_entropy: "#c44762", similarity: "#3794ff" };
   // Views of the distribution section: the score distribution, or intensity
   // coverage against similarity (needs the peak_intensity_coverage1/2 columns).
   const VIEWS = [["distribution", "Similarity distribution"], ["coverage", "Coverage vs similarity"]];
@@ -27,6 +28,7 @@
   const RANGE_DEFAULTS = Object.freeze({ min: "", minOperator: ">=", max: "", maxOperator: "<=" });
   let range = { ...RANGE_DEFAULTS, ...saved.range };
   let draftRange = { ...range };
+  let referenceIndex = typeof saved.referenceIndex === "string" ? saved.referenceIndex : "";
   let sort = saved.sort || null;
   let bins = saved.bins || 20;
   let chartType = CHART_TYPES.some(([type]) => type === saved.chartType) ? saved.chartType : "histogram";
@@ -57,17 +59,19 @@
 
   // Score columns of a result (one per calculated method) and their labels.
   const SCORE_LABELS = { cosine: "Cosine", reverse_cosine: "Reverse cosine",
-    modified_cosine: "Modified cosine", bonanza: "BONANZA" };
+    modified_cosine: "Modified cosine", bonanza: "BONANZA",
+    entropy: "Weighted entropy", unweighted_entropy: "Unweighted entropy" };
   const scoreLabel = (name) => SCORE_LABELS[name] || name;
   // The score column shown (statistics, distribution, filter, coverage plot):
   // the chosen one when the result has it, else the result's first.
   let score = typeof saved.score === "string" ? saved.score : "";
   const activeScore = () => value?.score_columns?.includes(score) ? score
     : value?.score_columns?.[0] || score || "cosine";
-  // The backend filters of the score range.
-  const rangeFilters = (r) => [
-    r.min !== "" ? { column: activeScore(), operator: r.minOperator, value: String(r.min) } : null,
-    r.max !== "" ? { column: activeScore(), operator: r.maxOperator, value: String(r.max) } : null,
+  // One filter set for the table, plots, and export.
+  const resultFilters = (includeScore = true) => [
+    referenceIndex !== "" ? { column: "index2", operator: "numeric_eq", value: referenceIndex } : null,
+    includeScore && range.min !== "" ? { column: activeScore(), operator: range.minOperator, value: String(range.min) } : null,
+    includeScore && range.max !== "" ? { column: activeScore(), operator: range.maxOperator, value: String(range.max) } : null,
   ].filter(Boolean);
   const rangeLabelText = (r) => [
     r.min !== "" ? `${r.minOperator === ">" ? ">" : "≥"} ${r.min}` : "",
@@ -75,7 +79,7 @@
   ].filter(Boolean).join(", ");
 
   function saveState() {
-    vscode.setState({ range, sort, bins, chartType, countScale, image, view, coverage, score });
+    vscode.setState({ range, referenceIndex, sort, bins, chartType, countScale, image, view, coverage, score });
   }
 
   let coverageFilters = null;   // the filters of the cached coverage answers
@@ -85,9 +89,10 @@
     if (type === "reload") coverageFilters = null;
     saveState();
     render();
-    const filters = rangeFilters(range);
+    const knownScores = Boolean(value) && type !== "reload";
+    const filters = resultFilters(knownScores);
     sentFilters = JSON.stringify(filters);
-    vscode.postMessage({ type, page, filters, sort, bins, score: value ? activeScore() : score || undefined });
+    vscode.postMessage({ type, page, filters, sort, bins, score: knownScores ? activeScore() : undefined });
   }
 
   function render() {
@@ -121,6 +126,7 @@
     const columns = (value?.columns || []).filter((column) =>
       !/^data_index[12]$/.test(column) && !(keyed && /^index[12]$/.test(column)));
     const filterText = rangeLabelText(range);
+    const referenceScope = referenceIndex === "" ? "" : ` · Reference index ${esc(referenceIndex)}`;
     const chartTypes = CHART_TYPES.filter(([type]) => type !== "methods" || (value?.score_columns?.length || 0) > 1);
     if (value && !chartTypes.some(([type]) => type === chartType)) chartType = "line";
     const countChart = chartType !== "box";
@@ -153,13 +159,14 @@
           <div><span>Stored data</span><strong>${value.has_matched_data ? `${number(value.matched_data_rows[0])} + ${number(value.matched_data_rows[1])}` : "Lightweight"}</strong></div>
           ${Object.entries(value.statistics).map(([key, n]) => `<div><span>${esc(key)}</span><strong>${number(n)}</strong></div>`).join("")}
         </section>
-        <section class="distribution"><div class="section-title"><div><h2>${showCoverage ? `Peak intensity coverage and ${esc(scoreLabel(activeScore()).toLowerCase())}` : methodsChart ? "Score distribution of every method" : `${esc(scoreLabel(activeScore()))} distribution`}</h2>
+        <section class="distribution"><div class="section-title"><div><h2>${showCoverage ? `Peak intensity coverage and ${esc(scoreLabel(activeScore()).toLowerCase())}` : methodsChart ? "Score distribution of every method" : `${esc(scoreLabel(activeScore()))} distribution`}${referenceScope}</h2>
           <p>${showCoverage ? `${coverage.plot === "density" ? "Number of filtered rows per cell" : "One point per filtered row"}${boundApplies() ? (coverage.bound ? `; the dotted line is the largest possible ${esc(scoreLabel(activeScore()).toLowerCase())}, √coverage${activeScore() === "modified_cosine" ? " of its own pairing (direct and precursor-shifted peaks)" : ""}` : "")
               : `; no √coverage bound for ${esc(scoreLabel(activeScore()))}${activeScore() === "reverse_cosine" ? " against the query's coverage (it bounds the reference's)" : activeScore() === "modified_cosine" ? " in this result (recalculate it to get the coverage of the modified-cosine pairing)" : ""}`}.`
             : chartType === "box" ? "Box plot across all filtered rows, showing minimum, Q1, median, Q3, and maximum."
             : methodsChart ? `Frequency of each method's scores across all ${number(value.total_rows)} filtered rows, one point per bin; rows without a score for a method are left out of its line. The filter applies to ${esc(scoreLabel(activeScore()))}.`
             : `Frequency across all ${number(value.total_rows)} filtered rows${chartType === "line" ? ", one point per bin" : ""}.`}</p></div>
-          <div class="chart-controls"><label>View <select id="chart-view" ${disabled}>${VIEWS.map(([type, label]) => `<option value="${type}" ${view === type ? "selected" : ""} ${type === "coverage" && !hasCoverage ? "disabled" : ""}>${esc(label)}</option>`).join("")}</select></label>
+          <div class="chart-controls">${value.columns.includes("index2") ? `<label>Reference index <input id="reference-index" type="number" min="0" step="1" placeholder="All" value="${esc(referenceIndex)}" title="Zero-based position in the reference dataset. Leave blank for all saved matches." ${disabled}></label>` : ""}
+          <label>View <select id="chart-view" ${disabled}>${VIEWS.map(([type, label]) => `<option value="${type}" ${view === type ? "selected" : ""} ${type === "coverage" && !hasCoverage ? "disabled" : ""}>${esc(label)}</option>`).join("")}</select></label>
           ${showCoverage ? coverageControls(disabled) : `<label>Plot <select id="chart-type" ${disabled}>${chartTypes.map(([type, label]) => option(type, label, chartType === type)).join("")}</select></label>
           <label>Count <select id="count-scale" ${disabled || !countChart ? "disabled" : ""}>${option("linear", "Linear", countScale === "linear")}${option("log", "Log₁₀", countScale === "log")}</select></label>
           <label>Bins <input id="bins" type="number" min="1" max="200" step="1" value="${bins}" ${disabled || !countChart ? "disabled" : ""} /></label>`}
@@ -172,7 +179,7 @@
         </section>
         <section><div class="section-title"><h2>Comparison results</h2>${columns.some((column) => /^index[12]$/.test(column)) ? "<span>Indices are zero-based input positions</span>" : ""}</div>
         <div class="table-scroll"><table><thead><tr>${value.has_matched_data ? "<th>Match</th>" : ""}${columns.map((column) => `<th aria-sort="${sort?.column === column ? (sort.direction === "asc" ? "ascending" : "descending") : "none"}"><button data-sort="${esc(column)}" ${disabled}>${esc(columnLabel(column))} ${sort?.column === column ? (sort.direction === "asc" ? "↑" : "↓") : "↕"}</button></th>`).join("")}</tr></thead>
-        <tbody>${value.rows.length ? value.rows.map((row, index) => `<tr>${value.has_matched_data ? `<td><button data-open-match="${Number(value.result_indices[index])}" ${disabled}>Open spectra</button></td>` : ""}${columns.map((column) => `<td>${/^(cosine|reverse_cosine|modified_cosine|bonanza|similarity|peak_intensity_coverage[12])$/.test(column) ? number(row[column]) : esc(typeof row[column] === "object" && row[column] !== null ? JSON.stringify(row[column]) : row[column])}</td>`).join("")}</tr>`).join("") : `<tr><td colspan="${columns.length + (value.has_matched_data ? 1 : 0)}" class="empty">No matching rows</td></tr>`}</tbody></table></div>
+        <tbody>${value.rows.length ? value.rows.map((row, index) => `<tr>${value.has_matched_data ? `<td><button data-open-match="${Number(value.result_indices[index])}" ${disabled}>Open spectra</button></td>` : ""}${columns.map((column) => `<td>${(value.score_columns.includes(column) || /^(modified_)?peak_intensity_coverage[12]$/.test(column)) ? number(row[column]) : esc(typeof row[column] === "object" && row[column] !== null ? JSON.stringify(row[column]) : row[column])}</td>`).join("")}</tr>`).join("") : `<tr><td colspan="${columns.length + (value.has_matched_data ? 1 : 0)}" class="empty">No matching rows</td></tr>`}</tbody></table></div>
         <footer><button id="previous" ${busy || value.page === 0 ? "disabled" : ""}>Previous</button><span>Page ${value.page + 1} / ${value.total_pages}</span><button id="next" ${busy || value.page + 1 >= value.total_pages ? "disabled" : ""}>Next</button></footer></section>
         <details class="metadata"><summary>Calculation metadata</summary><p>Reload reads the saved result. Recalculate from the dataset viewer to use changed spectra.</p><pre>${esc(JSON.stringify(value.metadata, null, 2))}</pre></details>
       ` : "<p>Opening similarity results…</p>"}
@@ -187,6 +194,14 @@
     }
     document.getElementById("apply")?.addEventListener("click", applyRange);
     document.getElementById("clear")?.addEventListener("click", () => { range = { ...RANGE_DEFAULTS }; draftRange = { ...range }; request(); });
+    document.getElementById("reference-index")?.addEventListener("change", (e) => {
+      const input = e.target;
+      if (!input.validity.valid || (input.value !== "" && !Number.isSafeInteger(Number(input.value)))) {
+        error = "Reference index must be a nonnegative whole number."; render(); return;
+      }
+      referenceIndex = input.value === "" ? "" : String(Number(input.value));
+      request();
+    });
     document.getElementById("bins")?.addEventListener("change", (e) => {
       const count = Number(e.target.value);
       if (!Number.isInteger(count) || count < 1 || count > 200) {
@@ -574,7 +589,7 @@
   function sendCoverage({ fields, key }) {
     if (coverageCache.has(key)) return;
     coverageCache.set(key, null);   // pending
-    vscode.postMessage({ type: "coverage-request", filters: rangeFilters(range), request_id: [coverageGeneration, key], ...fields });
+    vscode.postMessage({ type: "coverage-request", filters: resultFilters(), request_id: [coverageGeneration, key], ...fields });
   }
   function screenLayout() {
     const { width, height } = screenCoverageSize(Math.max(320, document.getElementById("chart")?.clientWidth || 800));
@@ -930,9 +945,11 @@
         if (!value.score_columns.length) value.score_columns = ["similarity"];
       }
       // After a reload or a filter change, earlier coverage answers are stale.
-      const filters = JSON.stringify(rangeFilters(range));
-      // The first request of an old saved state may not have known the score column.
-      if (filters !== sentFilters) { request("page-request", value.page); return; }
+      const filters = JSON.stringify(resultFilters());
+      // The first request uses the file default until its available score columns are known.
+      if (filters !== sentFilters || (value.score && value.score !== activeScore())) {
+        request("page-request", value.page); return;
+      }
       if (filters !== coverageFilters) {
         coverageCache.clear(); coverageKey = ""; coverageImageKey = ""; coverageFilters = filters; coverageGeneration++;
       }

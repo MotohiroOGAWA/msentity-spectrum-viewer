@@ -24,6 +24,7 @@ section, .metadata { margin: 16px 0; padding: 18px; border: 1px solid var(--vsco
 .filter-range { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
 .filter-range input { width: 110px; }
 #bins { width: 78px; margin-left: 8px; }
+#reference-index { width: 88px; }
 .chart-controls, .export-options { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 #chart { width: 100%; height: 260px; overflow: hidden; cursor: crosshair; }
 #chart svg { display: block; }

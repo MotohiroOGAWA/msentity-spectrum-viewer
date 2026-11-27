@@ -235,13 +235,17 @@
                 "cosine",
                 "reverse_cosine",
                 "modified_cosine",
-                "bonanza"
+                "bonanza",
+                "entropy",
+                "unweighted_entropy"
               ],
               "enumDescriptions": [
                 "Normalize all peaks in both spectra",
                 "Ignore unmatched query peaks in the query norm",
                 "Also match peaks shifted by the precursor m/z difference (needs a precursor m/z)",
-                "Sum-normalized shared intensity over shared plus unmatched intensity, with precursor-shifted matches (needs a precursor m/z)"
+                "Sum-normalized shared intensity over shared plus unmatched intensity, with precursor-shifted matches (needs a precursor m/z)",
+                "Spectral entropy similarity with entropy-dependent intensity weighting",
+                "Spectral entropy similarity using sum-normalized intensities"
               ]
             },
             "uniqueItems": true,
@@ -287,13 +291,17 @@
               "dot",
               "reverse",
               "modified",
-              "bonanza"
+              "bonanza",
+              "entropy",
+              "unweighted_entropy"
             ],
             "enumDescriptions": [
               "Dot product",
               "Reverse dot product",
               "Modified dot product (also matches precursor-shifted peaks)",
-              "BONANZA score"
+              "BONANZA score",
+              "Weighted spectral entropy similarity",
+              "Unweighted spectral entropy similarity"
             ],
             "default": "dot",
             "description": "Initial score method when two spectra are compared in the Mass Spectrum view."

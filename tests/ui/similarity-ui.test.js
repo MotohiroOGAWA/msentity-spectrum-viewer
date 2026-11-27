@@ -203,6 +203,14 @@ async function browserTests() {
     await page.locator("#bins").fill("2"); await page.locator("#bins").press("Tab");
     await page.waitForFunction(() => document.querySelectorAll(".frequency-table tbody tr").length === 2);
     await page.locator(".distribution summary").click();
+    await page.locator("#reference-index").fill("1");
+    await page.locator("#reference-index").dispatchEvent("change");
+    await page.waitForFunction(() => document.querySelector(".stats strong").textContent.startsWith("1"));
+    assert.match(await page.locator(".distribution h2").innerText(), /Reference index 1/);
+    assert.deepEqual(await page.locator(".frequency-table tbody tr td:nth-child(2)").allTextContents(), ["0", "1"]);
+    await page.locator("#reference-index").fill("");
+    await page.locator("#reference-index").dispatchEvent("change");
+    await page.waitForFunction(() => document.querySelector(".stats strong").textContent.startsWith("3"));
     const counts = await page.locator(".frequency-table tbody tr td:nth-child(2)").allTextContents();
     assert.deepEqual(counts, ["1", "2"]);
     assert.equal(await page.locator(".stats div").count(), 8);

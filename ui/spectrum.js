@@ -32,6 +32,12 @@
   const PRECURSOR_COLUMNS = ["PrecursorMZ", "precursor_mz", "PEPMASS", "ParentMZ"];
   // Methods that match precursor-shifted (neutral-loss) peaks and need a precursor m/z on both sides.
   const PRECURSOR_METHODS = ["modified", "bonanza"];
+  const ENTROPY_METHODS = ["entropy", "unweighted_entropy"];
+  const SIMILARITY_METHODS = [
+    ["dot", "Dot product"], ["reverse", "Reverse dot product"],
+    ["modified", "Modified dot product"], ["bonanza", "BONANZA"],
+    ["entropy", "Weighted entropy"], ["unweighted_entropy", "Unweighted entropy"],
+  ];
   // Matching tolerance of each unit; switching the unit keeps both values.
   // The unit "Da or ppm" matches peaks within either tolerance.
   const similarityTolerance = { Da: 0.01, ppm: 10 };
@@ -286,7 +292,7 @@
     return `${lines.join("\n")}\n`;
   };
 
-  const matchSpectrumPeaks = (upper, lower, allowShift) => {
+  const matchSpectrumPeaks = (upper, lower, allowShift, closestFirst) => {
     const shift = allowShift && precursorsAvailable()
       ? precursorMz(comparison.top) - precursorMz(comparison.bottom)
       : null;
@@ -294,13 +300,21 @@
     const candidates = [];
     upper.forEach((a, upperIndex) => lower.forEach((b, lowerIndex) => {
       const directError = Math.abs(a.mz - b.mz);
+      const toleranceDa = matchTolerance(tolerance, a.mz, b.mz);
+      if (closestFirst) {
+        const slack = Number.EPSILON * Math.max(1, Math.abs(a.mz), Math.abs(b.mz)) * 8;
+        if (directError <= toleranceDa + slack) candidates.push({ upperIndex, lowerIndex, error: directError });
+        return;
+      }
       const shiftedError = shift === null ? Infinity : Math.abs((a.mz - b.mz) - shift);
       const error = Math.min(
-        directError <= matchTolerance(tolerance, a.mz, b.mz) ? directError : Infinity,
+        directError <= toleranceDa ? directError : Infinity,
         shiftedError <= matchTolerance(tolerance, a.mz, b.mz + shift) ? shiftedError : Infinity);
       if (error < Infinity) candidates.push({ upperIndex, lowerIndex, error, product: a.intensity * b.intensity });
     }));
-    candidates.sort((a, b) => b.product - a.product || a.error - b.error);
+    candidates.sort(closestFirst
+      ? (a, b) => a.error - b.error || a.upperIndex - b.upperIndex || a.lowerIndex - b.lowerIndex
+      : (a, b) => b.product - a.product || a.error - b.error);
     const usedUpper = new Set(), usedLower = new Set(), matches = [];
     for (const candidate of candidates) {
       if (usedUpper.has(candidate.upperIndex) || usedLower.has(candidate.lowerIndex)) continue;
@@ -311,17 +325,46 @@
     return { matches, usedUpper, usedLower };
   };
 
+  const entropyProbabilities = (peaks, weighted) => {
+    const normalize = (values) => {
+      const sum = values.reduce((total, value) => total + value, 0);
+      return sum > 0 ? values.map((value) => value / sum) : values;
+    };
+    const finiteIntensity = (peak) => Number.isFinite(peak.intensity) ? peak.intensity : 0;
+    const maximum = peaks.reduce((max, peak) => Math.max(max, finiteIntensity(peak)), 0);
+    const probabilities = normalize(peaks.map((peak) => maximum > 0 ? finiteIntensity(peak) / maximum : 0));
+    if (!weighted) return probabilities;
+    const entropy = probabilities.reduce((h, p) => p > 0 ? h - p * Math.log(p) : h, 0);
+    return entropy < 3 ? normalize(probabilities.map((p) => p ** (0.25 + 0.25 * entropy))) : probabilities;
+  };
+
   const calculateSimilarity = () => {
     if (!comparison.top || !comparison.bottom) return null;
     const weighted = (peaks) => similarityExponent === 1 ? peaks
       : peaks.map((peak) => ({ ...peak, intensity: peak.intensity ** similarityExponent }));
-    const upper = weighted(spectrumPeaks(comparison.top));
-    const lower = weighted(spectrumPeaks(comparison.bottom));
-    if (!upper.length || !lower.length) return { score: 0, matched: 0 };
     const similarityMethod = effectiveSimilarityMethod();
     const shifted = PRECURSOR_METHODS.includes(similarityMethod);
-    const { matches, usedUpper, usedLower } = matchSpectrumPeaks(upper, lower, shifted);
+    const entropyMethod = ENTROPY_METHODS.includes(similarityMethod);
+    const prepare = (payload) => {
+      const peaks = weighted(spectrumPeaks(payload));
+      return entropyMethod ? peaks.filter((peak) => peak.intensity > 0) : peaks;
+    };
+    const upper = prepare(comparison.top);
+    const lower = prepare(comparison.bottom);
+    if (!upper.length || !lower.length) return { score: 0, matched: 0 };
+    const { matches, usedUpper, usedLower } = matchSpectrumPeaks(upper, lower, shifted, entropyMethod);
     if (!matches.length) return { score: 0, matched: 0 };
+
+    if (entropyMethod) {
+      const p = entropyProbabilities(upper, similarityMethod === "entropy");
+      const q = entropyProbabilities(lower, similarityMethod === "entropy");
+      const xlogx = (x) => x > 0 ? x * Math.log2(x) : 0;
+      const score = matches.reduce((sum, { upperIndex, lowerIndex }) => {
+        const a = p[upperIndex], b = q[lowerIndex];
+        return sum + (xlogx(a + b) - xlogx(a) - xlogx(b)) / 2;
+      }, 0);
+      return { score: Math.max(0, Math.min(1, score)), matched: matches.length };
+    }
 
     if (similarityMethod === "bonanza") {
       const upperTotal = upper.reduce((sum, peak) => sum + peak.intensity, 0);
@@ -635,7 +678,7 @@
 
   // Default score method, tolerance, and intensity exponent from the host (comparison-settings).
   function applyComparisonSettings(settings) {
-    if (["dot", "reverse", "modified", "bonanza"].includes(settings?.method)) similarityMethod = settings.method;
+    if (SIMILARITY_METHODS.some(([method]) => method === settings?.method)) similarityMethod = settings.method;
     if (typeof settings?.precursor_column === "string") precursorColumn = settings.precursor_column.trim();
     for (const unit of ["Da", "ppm"]) {
       const tolerance = Number(settings?.[`tolerance_${unit.toLowerCase()}`]);
@@ -653,7 +696,8 @@
     comparison.topPinned = false;
     comparison.bottomPinned = false;
     // The score column the result viewer showed, as the comparison's method.
-    similarityMethod = { reverse_cosine: "reverse", modified_cosine: "modified", bonanza: "bonanza" }[method] || "dot";
+    similarityMethod = { reverse_cosine: "reverse", modified_cosine: "modified" }[method]
+      || (SIMILARITY_METHODS.some(([name]) => name === method) ? method : "dot");
     renderSpectrum();
   }
 
@@ -661,7 +705,7 @@
   // collapsible block: the method on the first line, the tolerance on the next,
   // then the intensity exponent.
   function similarityMarkup(similarity) {
-    const methods = [["dot", "Dot product"], ["reverse", "Reverse dot product"], ["modified", "Modified dot product"], ["bonanza", "BONANZA"]];
+    const methods = SIMILARITY_METHODS;
     const shown = effectiveSimilarityMethod();
     const label = methods.find(([method]) => method === shown)?.[1] || "Dot product";
     const note = precursorsAvailable() ? "" : `<span class="similarity-note" role="note">No precursor m/z in the ${[comparison.top, comparison.bottom].map(precursorMz).every((value) => value === null) ? "upper and lower spectra" : precursorMz(comparison.top) === null ? "upper spectrum" : "lower spectrum"} (${precursorColumn ? `column: ${esc(precursorColumn)}` : "column: auto-detected"}): Modified dot product and BONANZA are unavailable${PRECURSOR_METHODS.includes(similarityMethod) ? "; showing the dot product" : ""}.</span>`;

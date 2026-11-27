@@ -223,6 +223,9 @@ The `.mssim` file opens in a dedicated **Similarity Viewer**:
 - The histogram and count/mean/Q1/median/Q3/min/max summarize all filtered rows,
   not just the current page. Choose 1–200 bins; click a bar or use the accessible
   frequency table to filter a similarity range. The final bin includes 1.0.
+- **Reference index** limits the view to saved matches for a single reference
+  spectrum by its zero-based position in the input dataset (`index2`).
+  Clear the field to restore the distribution of all saved matches.
 - Switch between a histogram, a line, and a box plot. Histogram counts support
   linear and log10 scales. With several methods, **All methods** draws the
   frequency of every score column as colored lines over the same bins, with a
@@ -337,13 +340,13 @@ discards assignments that have not been exported.
 <!-- rdkit:end -->
 - `msentitySpectrumViewer.similarity.*`: defaults of **Calculate similarity…** —
   `methods` (`["cosine"]`; any of `cosine`, `reverse_cosine`,
-  `modified_cosine`, `bonanza`), `threshold` (`0.8`), `intensityExponent` (`1`),
+  `modified_cosine`, `bonanza`, `entropy`, `unweighted_entropy`), `threshold` (`0.8`), `intensityExponent` (`1`),
   `includeMatchedData` (`true`), `threads` (`1`; at most the logical cores
   minus one, and also editable in the form). The m/z tolerance comes from the
   `spectrumComparison.tolerance*` settings below; `intensityExponent` is also
   the initial exponent when two spectra are compared.
 - `msentitySpectrumViewer.spectrumComparison.method` (`dot`, `reverse`,
-  `modified`, `bonanza`), `toleranceUnit` (`Da or ppm`, `Da`, or `ppm`),
+  `modified`, `bonanza`, `entropy`, `unweighted_entropy`), `toleranceUnit` (`Da or ppm`, `Da`, or `ppm`),
   `toleranceDa` (`0.01`), `tolerancePpm` (`10`), and `precursorColumn`
   (empty to detect automatically, or the metadata column of the precursor m/z): initial score settings when two spectra
   are compared. `toleranceUnit`, `toleranceDa`, and `tolerancePpm` are also
