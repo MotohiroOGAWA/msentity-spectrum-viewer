@@ -4,6 +4,18 @@
   const vscode = typeof acquireVsCodeApi === "function" ? acquireVsCodeApi() : window.msentityViewerHost;
   const app = document.getElementById("app");
   const saved = vscode.getState() || {};
+  const toolbarIcon = (name) => `<svg class="toolbar-icon icon-${name}" viewBox="0 0 24 24" aria-hidden="true" focusable="false">${({
+    reload: '<path d="M20 4v6h-6M20 10a8 8 0 1 0 .2 5"/>',
+    more: '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
+    metadata: '<path d="M14 3H5v18h14V8l-5-5v5h5M8 12h8M8 16h8"/>',
+    columns: '<rect x="3" y="3" width="18" height="18" rx="1"/><path d="M11 3v18M3 10h18M6 6h2m6 0h4M6 14h2m6 0h4"/>',
+    filter: '<path d="M3 4h18l-7 9v6l-4 2v-8L3 4Z"/>',
+    export: '<path d="M12 16V3m-5 5 5-5 5 5M5 12H3v9h18v-9h-2"/>',
+    similarity: '<path d="M5 20V13m7 7V4m7 16V9" stroke-width="3"/>',
+    settings: '<circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2.5"/><path d="M12 2v4m0 12v4M2 12h4m12 0h4M4.9 4.9l2.8 2.8m8.6 8.6 2.8 2.8M19.1 4.9l-2.8 2.8m-8.6 8.6-2.8 2.8"/>',
+    spectrum: '<path d="M2 20h20M5 20v-7m4 7V8m4 12V4m4 16v-8m4 8v-4"/>',
+  })[name]}</svg>`;
+
   // Image settings shared by the chart on screen (plot colors, grid) and the saved image.
   // cov*: axis ranges of the coverage plot (coverage, similarity).
   const IMAGE_DEFAULTS = Object.freeze({ format: "png", width: 1200, height: 720, grid: true,
@@ -29,13 +41,17 @@
   let range = { ...RANGE_DEFAULTS, ...saved.range };
   let draftRange = { ...range };
   let referenceIndex = typeof saved.referenceIndex === "string" ? saved.referenceIndex : "";
-  let sort = saved.sort || null;
+  const normalizeSort = (savedSort) => Array.isArray(savedSort) ? savedSort : savedSort ? [savedSort] : [];
+  let sort = normalizeSort(saved.sort);
   let scoreColumnOrder = [];
   let columnOrder = Array.isArray(saved.columnOrder) ? saved.columnOrder : [];
   let hiddenColumns = Array.isArray(saved.hiddenColumns) ? saved.hiddenColumns : ["data_index1", "data_index2"];
   let columnsOpen = false;
   let moreOpen = false;
   let actionDialog = "";
+  let metadataDraft = null;
+  let metadataPending = false;
+  let metadataError = "";
   let tableExport = null;
   let pageSize = Number.isInteger(saved.pageSize) ? saved.pageSize : undefined;
   let columnFilters = Array.isArray(saved.columnFilters) ? saved.columnFilters : [];
@@ -166,6 +182,13 @@
     const columnLabel = (column) => sharedKey && column === sharedKey ? keyMatch : column;
     const availableColumns = comparisonColumns();
     const columns = availableColumns.filter((name) => !hiddenColumns.includes(name));
+    const heading = (column) => {
+      const priority = sort.findIndex((entry) => entry.column === column);
+      const entry = sort[priority];
+      const direction = entry ? (entry.direction === "asc" ? "ascending" : "descending") : "none";
+      const badge = entry ? `${entry.mode === "numeric" ? "123 · " : ""}${priority + 1}${entry.direction === "asc" ? "▲" : "▼"}` : "";
+      return `<th aria-sort="${direction}"><button data-sort="${esc(column)}" title="Click: text ascending → descending → remove sort. Right-click for sort options." ${disabled}>${esc(columnLabel(column))}<span class="sort-badge">${badge}</span></button></th>`;
+    };
     const filterText = rangeLabelText(range);
     const referenceScope = referenceIndex === "" ? "" : ` · Reference index ${esc(referenceIndex)}`;
     const chartTypes = CHART_TYPES.filter(([type]) => type !== "methods" || (value?.score_columns?.length || 0) > 1);
@@ -175,18 +198,18 @@
     const hasCoverage = hasCoverageColumns();
     const showCoverage = view === "coverage" && hasCoverage;
     app.innerHTML = `
-      <header><div><span class="eyebrow">MSENTITY · SIMILARITY</span><h1>${esc(app.dataset.filename)}</h1>
+      <header class="result-toolbar"><div class="result-heading"><h1>${toolbarIcon("similarity")}<span>${esc(app.dataset.filename)}</span>${value?.metadata_modified ? '<small title="Metadata changes have not been saved">Modified</small>' : ""}</h1>
         <p>${esc(subtitle)}</p>${sharedKey ? `<p class="key-sides">a: ${esc(sourceName(0))} · b: ${esc(sourceName(1))}</p>` : ""}</div>
-        <nav aria-label="Result actions">${value ? `<label>Score <select id="score-column" ${disabled}>${scoreColumns().map((name) => option(name, scoreLabel(name), name === activeScore())).join("")}</select></label>` : ""}
-        <button id="filter" ${disabled}>Filter${filterText ? ` (${esc(scoreLabel(activeScore()))} ${esc(filterText)})` : ""}${columnFilters.length ? ` · ${columnFilters.length}` : ""}</button>
-        <button id="export" ${disabled || !value ? "disabled" : ""}>Export…</button>
-        <button id="reload" ${disabled}>Reload</button>
-        <div class="result-more"><button id="result-more-button" aria-expanded="${moreOpen}" aria-controls="result-more-actions" ${disabled || !value ? "disabled" : ""}>More …</button>
-          <div id="result-more-actions" ${moreOpen ? "" : "hidden"}>
-            <button id="result-metadata">Metadata</button>
-            <button id="result-columns-button" aria-expanded="${columnsOpen}" aria-controls="result-columns">Columns</button>
-            <button id="result-load-options">Loading options and reload</button>
-            <button id="result-settings">Settings</button>
+        <nav class="result-toolbar-actions" aria-label="Result actions">${value ? `<label class="score-control">Score <select id="score-column" ${disabled}>${scoreColumns().map((name) => option(name, scoreLabel(name), name === activeScore())).join("")}</select></label>` : ""}
+        <button class="toolbar-action" id="reload" ${disabled}>${toolbarIcon("reload")}<span>Reload</span></button>
+        <button class="toolbar-action" id="filter" aria-expanded="${showFilters}" ${disabled}>${toolbarIcon("filter")}<span>Filter${filterText ? ` (${esc(scoreLabel(activeScore()))} ${esc(filterText)})` : ""}${columnFilters.length ? ` · ${columnFilters.length}` : ""}</span></button>
+        <button class="toolbar-action" id="export" ${disabled || !value ? "disabled" : ""}>${toolbarIcon("export")}<span>Export…</span></button>
+        <div class="result-more"><button class="toolbar-action" id="result-more-button" aria-haspopup="menu" aria-expanded="${moreOpen}" aria-controls="result-more-actions" ${disabled || !value ? "disabled" : ""}>${toolbarIcon("more")}<span>More …</span></button>
+          <div id="result-more-actions" role="menu" aria-label="Result actions" ${moreOpen ? "" : "hidden"}>
+            <button id="result-metadata" role="menuitem">${toolbarIcon("metadata")}<span>Metadata</span></button>
+            <button id="result-columns-button" role="menuitem" aria-expanded="${columnsOpen}" aria-controls="result-columns">${toolbarIcon("columns")}<span>Columns</span></button>
+            <button id="result-load-options" role="menuitem">${toolbarIcon("reload")}<span>Loading options and reload</span></button>
+            <button id="result-settings" role="menuitem">${toolbarIcon("settings")}<span>Settings</span></button>
           </div>
         </div></nav></header>
       <div role="status" class="message">${busy ? "Processing…" : esc(notice)}</div>
@@ -225,7 +248,7 @@
           ${showCoverage ? coverageControls(disabled) : `<label>Plot <select id="chart-type" ${disabled}>${chartTypes.map(([type, label]) => option(type, label, chartType === type)).join("")}</select></label>
           <label>Count <select id="count-scale" ${disabled || !countChart ? "disabled" : ""}>${option("linear", "Linear", countScale === "linear")}${option("log", "Log₁₀", countScale === "log")}</select></label>
           <label>Bins <input id="bins" type="number" min="1" max="200" step="1" value="${bins}" ${disabled || !countChart ? "disabled" : ""} /></label>`}
-          <button id="save-image" ${disabled || (showCoverage && !coverageCache.get(coverageKey)) ? "disabled" : ""}>Save image…</button></div></div>
+          <button class="toolbar-action" id="save-image" ${disabled || (showCoverage && !coverageCache.get(coverageKey)) ? "disabled" : ""}>${toolbarIcon("export")}<span>Save image…</span></button></div></div>
           ${view === "coverage" && !hasCoverage ? `<p class="hint">This result has no peak intensity coverage columns (peak_intensity_coverage1, peak_intensity_coverage2). Recalculate it to plot coverage.</p>` : ""}
           <div id="chart" class="${showCoverage ? "coverage-chart" : ""}" role="img" aria-label="${showCoverage ? "Peak intensity coverage against similarity" : chartType === "box" ? "Similarity score box plot" : "Similarity score distribution"}"></div>
           <div id="chart-hint" class="hint" aria-live="polite">${showCoverage ? coverageHint() : chartHint()}</div>
@@ -241,18 +264,39 @@
         </div>` : ""}
         ${columns.some((column) => /^index[12]$/.test(column)) ? '<p class="index-note">index1 and index2 are zero-based input positions.</p>' : ""}
         ${columns.length || value.has_matched_data ? "" : '<p>No columns selected.</p>'}
-        <div class="table-scroll" ${columns.length || value.has_matched_data ? "" : "hidden"}><table><thead><tr>${value.has_matched_data ? "<th>Match</th>" : ""}${columns.map((column) => `<th aria-sort="${sort?.column === column ? (sort.direction === "asc" ? "ascending" : "descending") : "none"}"><button data-sort="${esc(column)}" ${disabled}>${esc(columnLabel(column))} ${sort?.column === column ? (sort.direction === "asc" ? "↑" : "↓") : "↕"}</button></th>`).join("")}</tr></thead>
-        <tbody>${value.rows.length ? value.rows.map((row, index) => `<tr>${value.has_matched_data ? `<td><button data-open-match="${Number(value.result_indices[index])}" ${disabled}>Open spectra</button></td>` : ""}${columns.map((column) => `<td>${(value.score_columns.includes(column) || /^(modified_)?peak_intensity_coverage[12]$/.test(column)) ? number(row[column]) : esc(typeof row[column] === "object" && row[column] !== null ? JSON.stringify(row[column]) : row[column])}</td>`).join("")}</tr>`).join("") : `<tr><td colspan="${columns.length + (value.has_matched_data ? 1 : 0)}" class="empty">No matching rows</td></tr>`}</tbody></table></div>
+        <div class="table-scroll" ${columns.length || value.has_matched_data ? "" : "hidden"}><table><thead><tr>${value.has_matched_data ? "<th>Match</th>" : ""}${columns.map(heading).join("")}</tr></thead>
+        <tbody>${value.rows.length ? value.rows.map((row, index) => `<tr>${value.has_matched_data ? `<td><button class="toolbar-action" data-open-match="${Number(value.result_indices[index])}" ${disabled}>${toolbarIcon("spectrum")}<span>Open spectra</span></button></td>` : ""}${columns.map((column) => `<td>${(value.score_columns.includes(column) || /^(modified_)?peak_intensity_coverage[12]$/.test(column)) ? number(row[column]) : esc(typeof row[column] === "object" && row[column] !== null ? JSON.stringify(row[column]) : row[column])}</td>`).join("")}</tr>`).join("") : `<tr><td colspan="${columns.length + (value.has_matched_data ? 1 : 0)}" class="empty">No matching rows</td></tr>`}</tbody></table></div>
         <footer><button id="previous" ${busy || value.page === 0 ? "disabled" : ""}>Previous</button><span>Page ${value.page + 1} / ${value.total_pages}</span><button id="next" ${busy || value.page + 1 >= value.total_pages ? "disabled" : ""}>Next</button></footer></section>
 
       ` : "<p>Opening similarity results…</p>"}
       ${exportOpen && value ? (showCoverage ? coverageImageDialog() : imageDialog()) : ""}
       ${actionDialog && value ? resultDialog() : ""}`;
 
-    document.getElementById("result-more-button")?.addEventListener("click", () => {
+    const moreButton = document.getElementById("result-more-button");
+    const focusMore = () => document.getElementById("result-more-button")?.focus({ preventScroll: true });
+    moreButton?.addEventListener("click", () => {
       moreOpen = !moreOpen;
       render();
-      document.getElementById("result-more-button")?.focus();
+      if (moreOpen) document.querySelector("#result-more-actions button")?.focus({ preventScroll: true });
+      else focusMore();
+    });
+    moreButton?.addEventListener("keydown", (event) => {
+      if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+      event.preventDefault();
+      moreOpen = true; render();
+      const items = [...document.querySelectorAll("#result-more-actions button")];
+      items.at(event.key === "ArrowUp" ? -1 : 0)?.focus({ preventScroll: true });
+    });
+    const moreMenu = document.getElementById("result-more-actions");
+    moreMenu?.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault(); moreOpen = false; render(); focusMore(); return;
+      }
+      if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+      event.preventDefault();
+      const items = [...moreMenu.querySelectorAll("button")];
+      const step = event.key === "ArrowDown" ? 1 : -1;
+      items[(items.indexOf(document.activeElement) + step + items.length) % items.length]?.focus();
     });
     document.getElementById("result-columns-button")?.addEventListener("click", () => {
       columnsOpen = true; moreOpen = false; render();
@@ -262,9 +306,18 @@
       columnsOpen = false; render();
       document.getElementById("result-more-button")?.focus();
     });
-    for (const [id, dialog] of [["result-metadata", "metadata"], ["result-load-options", "loading"]]) {
-      document.getElementById(id)?.addEventListener("click", () => { moreOpen = false; actionDialog = dialog; render(); });
-    }
+    document.getElementById("result-metadata")?.addEventListener("click", () => {
+      const annotations = value.metadata.annotations || {};
+      metadataDraft = {
+        description: typeof annotations.description === "string" ? annotations.description : "",
+        tags: Array.isArray(annotations.tags) ? annotations.tags.join("\n") : "",
+        attributes: Object.entries(annotations.attributes || {}).map(([name, text]) => ({ name, text })),
+      };
+      moreOpen = false; actionDialog = "metadata"; metadataError = ""; render();
+    });
+    document.getElementById("result-load-options")?.addEventListener("click", () => {
+      moreOpen = false; actionDialog = "loading"; render();
+    });
     document.getElementById("result-settings")?.addEventListener("click", () => {
       moreOpen = false; render(); vscode.postMessage({ type: "open-settings" });
     });
@@ -337,11 +390,13 @@
     if (showCoverage) bindCoverageControls();
     document.getElementById("count-scale")?.addEventListener("change", (e) => { countScale = e.target.value; saveState(); render(); });
     document.getElementById("save-image")?.addEventListener("click", () => { exportOpen = true; render(); });
-    document.querySelectorAll("[data-sort]").forEach((button) => button.addEventListener("click", () => {
-      const column = button.dataset.sort;
-      sort = { column, direction: sort?.column === column && sort.direction === "asc" ? "desc" : "asc" };
-      request();
-    }));
+    document.querySelectorAll("[data-sort]").forEach((button) => {
+      button.addEventListener("click", () => setColumnSort(button.dataset.sort, "text"));
+      button.closest("th").addEventListener("contextmenu", (event) => openSortMenu(event, button));
+      button.addEventListener("keydown", (event) => {
+        if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) openSortMenu(event, button);
+      });
+    });
     document.querySelectorAll("[data-open-match]").forEach((button) => button.addEventListener("click", () => {
       vscode.postMessage({ type: "open-similarity-match", resultIndex: Number(button.dataset.openMatch), score: activeScore() });
     }));
@@ -372,11 +427,78 @@
     else document.body.classList.remove("modal-open");
   }
 
+  function setColumnSort(column, mode, direction) {
+    const index = sort.findIndex((entry) => entry.column === column);
+    if (!direction) {
+      const current = sort[index];
+      direction = current?.mode === mode ? (current.direction === "asc" ? "desc" : null) : "asc";
+    }
+    if (!direction) sort.splice(index, 1);
+    else if (index === -1) sort.push({ column, mode, direction });
+    else sort[index] = { column, mode, direction };
+    request();
+  }
+
+  function openSortMenu(event, trigger) {
+    if (busy) return;
+    event.preventDefault();
+    document.querySelector(".result-sort-menu")?.remove();
+    const menu = document.createElement("div");
+    menu.className = "result-sort-menu";
+    menu.setAttribute("role", "menu");
+    menu.setAttribute("aria-label", "Sort options");
+    for (const [mode, label] of [["text", "text"], ["numeric", "number"]]) {
+      for (const [direction, description] of [["asc", "ascending"], ["desc", "descending"]]) {
+        const action = document.createElement("button");
+        action.setAttribute("role", "menuitem");
+        action.textContent = `Sort as ${label} (${description})`;
+        action.addEventListener("click", () => setColumnSort(trigger.dataset.sort, mode, direction));
+        menu.append(action);
+      }
+    }
+    app.append(menu);
+    const bounds = trigger.getBoundingClientRect();
+    menu.style.left = `${Math.max(0, Math.min(event.clientX || bounds.left, window.innerWidth - menu.offsetWidth))}px`;
+    menu.style.top = `${Math.max(0, Math.min(event.clientY || bounds.bottom, window.innerHeight - menu.offsetHeight))}px`;
+    const actions = [...menu.children];
+    menu.addEventListener("focusout", (e) => { if (!menu.contains(e.relatedTarget)) menu.remove(); });
+    menu.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        trigger.focus({ preventScroll: true });
+      } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        const step = e.key === "ArrowDown" ? 1 : -1;
+        actions[(actions.indexOf(document.activeElement) + step + actions.length) % actions.length].focus();
+      }
+    });
+    actions[0].focus({ preventScroll: true });
+  }
+
   function resultDialog() {
-    const title = { export: "Export results", metadata: "Calculation metadata", loading: "Loading options and reload" }[actionDialog];
+    const title = { export: "Export results", metadata: "Metadata", loading: "Loading options and reload" }[actionDialog];
     let body;
     if (actionDialog === "metadata") {
-      body = `<pre class="result-metadata">${esc(JSON.stringify(value.metadata, null, 2))}</pre>`;
+      const { annotations, ...calculation } = value.metadata;
+      const disabled = metadataPending ? "disabled" : "";
+      body = `<fieldset class="result-annotations" ${disabled}>
+        <legend>Result annotations</legend>
+        <label>Description<textarea id="result-description" rows="4">${esc(metadataDraft.description)}</textarea></label>
+        <label>Tags (one per line)<textarea id="result-tags" rows="2">${esc(metadataDraft.tags)}</textarea></label>
+        <div>Attributes</div>
+        ${metadataDraft.attributes.map(({ name, text }, index) => `<div class="result-attribute" data-attribute-index="${index}">
+          <input data-attribute-field="name" aria-label="Attribute name" placeholder="Name" value="${esc(name)}">
+          <input data-attribute-field="text" aria-label="Attribute value" placeholder="Value" value="${esc(text)}">
+          <button type="button" data-remove-attribute="${index}" aria-label="Remove attribute">×</button>
+        </div>`).join("")}
+        <button id="add-result-attribute" type="button">Add attribute</button>
+      </fieldset>
+      <p>Apply updates the open result. Export as MSSIM to save annotations. Reload discards edits.</p>
+      ${metadataError ? `<p role="alert" class="error">${esc(metadataError)}</p>` : ""}
+      <details class="result-calculation"><summary>Calculation metadata (read-only)</summary>
+        <pre class="result-metadata">${esc(JSON.stringify(calculation, null, 2))}</pre>
+      </details>
+      <div class="actions"><button id="apply-result-annotations" class="primary" type="submit" ${disabled}>Apply</button></div>`;
     } else if (actionDialog === "loading") {
       body = `<label>Rows per page <input id="result-page-size" type="number" min="1" max="500" step="1" required value="${value.page_size}"></label>
         <p>Reload reads the saved .mssim file.</p>
@@ -399,7 +521,7 @@
 
   function bindResultDialog() {
     const dialog = document.getElementById("result-dialog");
-    const close = () => { actionDialog = ""; render(); };
+    const close = () => { if (!metadataPending) { actionDialog = ""; render(); } };
     dialog.addEventListener("cancel", (event) => { event.preventDefault(); close(); });
     document.getElementById("close-result-dialog").addEventListener("click", close);
     dialog.querySelector("form").addEventListener("submit", (event) => {
@@ -408,6 +530,18 @@
         pageSize = Number(document.getElementById("result-page-size").value);
         actionDialog = ""; request("reload"); return;
       }
+      if (actionDialog === "metadata") {
+        const pairs = metadataDraft.attributes.map(({ name, text }) => [name.trim(), text])
+          .filter(([name, text]) => name || text);
+        if (pairs.some(([name]) => !name) || new Set(pairs.map(([name]) => name)).size !== pairs.length) {
+          metadataError = "Enter a unique name for each attribute."; render(); return;
+        }
+        metadataPending = true; metadataError = ""; render();
+        vscode.postMessage({ type: "set-similarity-annotations", description: metadataDraft.description,
+          tags: metadataDraft.tags.split("\n").map((tag) => tag.trim()).filter(Boolean),
+          attributes: Object.fromEntries(pairs) });
+        return;
+      }
       if (actionDialog !== "export") return;
       const { format, columns, peakSides } = tableExport;
       const text = ["tsv", "csv"].includes(format);
@@ -415,6 +549,23 @@
       actionDialog = "";
       request("export-similarity", 0, { format, ...(text ? { columns, peak_sides: peakSides } : {}) });
     });
+    if (actionDialog === "metadata") {
+      for (const [id, field] of [["result-description", "description"], ["result-tags", "tags"]]) {
+        dialog.querySelector(`#${id}`).addEventListener("input", (e) => { metadataDraft[field] = e.target.value; });
+      }
+      dialog.querySelectorAll("[data-attribute-field]").forEach((input) => input.addEventListener("input", () => {
+        const index = Number(input.closest("[data-attribute-index]").dataset.attributeIndex);
+        metadataDraft.attributes[index][input.dataset.attributeField] = input.value;
+      }));
+      dialog.querySelectorAll("[data-remove-attribute]").forEach((button) => button.addEventListener("click", () => {
+        metadataDraft.attributes.splice(Number(button.dataset.removeAttribute), 1); render();
+        document.getElementById("add-result-attribute")?.focus();
+      }));
+      dialog.querySelector("#add-result-attribute").addEventListener("click", () => {
+        metadataDraft.attributes.push({ name: "", text: "" }); render();
+        [...document.querySelectorAll('[data-attribute-field="name"]')].at(-1)?.focus();
+      });
+    }
     if (actionDialog === "export") {
       const format = document.getElementById("table-export-format");
       format.addEventListener("change", () => { tableExport.format = format.value; render(); });
@@ -1139,6 +1290,15 @@
     }
   }
 
+  document.addEventListener("click", (event) => {
+    if (!moreOpen || event.target.closest(".result-more")) return;
+    moreOpen = false;
+    const button = document.getElementById("result-more-button");
+    if (button) button.setAttribute("aria-expanded", "false");
+    const menu = document.getElementById("result-more-actions");
+    if (menu) menu.hidden = true;
+  });
+
   window.addEventListener("message", ({ data: message }) => {
     if (message.type === "similarity-viewer-config") {
       const previous = activeScore();
@@ -1155,11 +1315,13 @@
       }
       // A reloaded file can have a different schema.
       columnFilters = columnFilters.filter(({ column }) => filterColumnNames().includes(column));
-      if (sort && !value.columns.includes(sort.column)) sort = null;
+      if (sort.some(({ column }) => !value.columns.includes(column))) {
+        sort = sort.filter(({ column }) => value.columns.includes(column));
+      }
       // After a reload or a filter change, earlier coverage answers are stale.
       const filters = JSON.stringify(resultFilters());
       // The first request uses the file default until its available score columns are known.
-      if (filters !== sentFilters || sort !== sentSort || (value.score && value.score !== activeScore())) {
+      if (filters !== sentFilters || (sentSort ? sort !== sentSort : sort.length > 0) || (value.score && value.score !== activeScore())) {
         request("page-request", value.page); return;
       }
       if (filters !== coverageFilters) {
@@ -1170,6 +1332,17 @@
     }
     else if (message.type === "similarity-coverage") receiveCoverage(message.value);
     else if (message.type === "error") { busy = false; error = message.message || "Could not process results."; render(); }
+    else if (message.type === "similarity-annotations-updated") {
+      metadataPending = false;
+      if (message.error) metadataError = message.error;
+      else {
+        value.metadata = message.metadata;
+        value.metadata_modified = true;
+        actionDialog = "";
+        notice = "Metadata updated. Export as MSSIM to save.";
+      }
+      render();
+    }
     else if (message.type === "export-cancelled") { busy = false; render(); }
     else if (message.type === "export-complete") {
       busy = false; notice = `Exported ${number(message.total_rows)} rows to ${message.path}`; render();

@@ -168,7 +168,8 @@ async function browserTests() {
         child.stdin.write(JSON.stringify({ ...message, type: "export", path: path.join(temporary, `result.${message.format}`) }) + "\n");
         return;
       }
-      const type = { "page-request": "page", "coverage-request": "coverage" }[message.type] || message.type;
+      const type = { "page-request": "page", "coverage-request": "coverage",
+        "set-similarity-annotations": "set-annotations" }[message.type] || message.type;
       child.stdin.write(JSON.stringify({ ...message, type }) + "\n");
     });
     await page.goto(`http://127.0.0.1:${server.address().port}`);
@@ -183,6 +184,9 @@ async function browserTests() {
       }
     });
     await page.waitForSelector(".stats");
+    for (const [control, icon] of [["reload", "reload"], ["filter", "filter"], ["export", "export"], ["result-more-button", "more"]]) {
+      assert.equal(await page.locator(`#${control} .icon-${icon}[aria-hidden="true"]`).count(), 1);
+    }
     assert.equal(await page.locator(".table-scroll tbody tr").count(), 2);
     assert.ok((await page.locator(".table-scroll").innerText()).includes("<script>bad</script>"));
     await page.locator("#next").click();
@@ -334,8 +338,19 @@ async function browserTests() {
     await page.waitForFunction(() => !document.querySelector("#reload").disabled);
     await page.locator('[data-sort="cosine"]').click();
     await page.waitForFunction(() => document.querySelector(".table-scroll tbody tr td:nth-child(2)").textContent === "C");
+    await page.locator('[data-sort="cosine"]').click();
+    await page.waitForFunction(() => !document.querySelector("#reload").disabled);
+    assert.equal(await page.locator('[data-sort="cosine"]').locator("..").getAttribute("aria-sort"), "none");
+    await page.locator('[data-sort="cosine"]').click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Sort as number (descending)" }).click();
+    await page.waitForFunction(() => !document.querySelector("#reload").disabled);
+    assert.match(await page.locator('[data-sort="cosine"]').innerText(), /123 · 1▼/);
+    await page.locator('[data-sort="index1"]').click();
+    await page.waitForFunction(() => !document.querySelector("#reload").disabled);
+    assert.match(await page.locator('[data-sort="index1"]').innerText(), /2▲/);
     await page.locator("#reload").click();
     await page.waitForFunction(() => !document.querySelector("#reload").disabled);
+    assert.match(await page.locator('[data-sort="cosine"]').innerText(), /123 · 1▼/);
     await page.screenshot({ path: path.join(os.tmpdir(), "msentity-similarity-ui.png"), fullPage: true });
     await page.evaluate(() => window.dispatchEvent(new MessageEvent("message", {
       data: { type: "similarity-viewer-config", scoreColumnOrder: ["modified_cosine", "entropy", "cosine"] },
@@ -343,8 +358,12 @@ async function browserTests() {
     assert.deepEqual(await page.locator("#score-column option").allTextContents(), ["Modified cosine", "Cosine"]);
     const columns = () => page.locator("[data-sort]").evaluateAll((buttons) => buttons.map((button) => button.dataset.sort));
     assert.deepEqual((await columns()).slice(0, 3), ["SpecID", "modified_cosine", "cosine"]);
-    await page.locator("#result-more-button").click();
-    await page.locator("#result-columns-button").click();
+    await page.locator("#result-more-button").press("ArrowDown");
+    assert.equal(await page.getByRole("menuitem", { name: "Metadata" }).evaluate((item) => item === document.activeElement), true);
+    await page.keyboard.press("ArrowDown");
+    assert.equal(await page.getByRole("menuitem", { name: "Columns" }).evaluate((item) => item === document.activeElement), true);
+    assert.equal(await page.locator("#result-columns-button .icon-columns").count(), 1);
+    await page.keyboard.press("Enter");
     await page.locator('[data-result-column="index1"]').uncheck();
     assert.deepEqual((await columns()).slice(-1), ["index2"]);
     await page.locator('[data-move-column="cosine"][data-offset="-1"]').click();
@@ -358,13 +377,28 @@ async function browserTests() {
     await page.locator("#close-result-columns").click();
     await page.locator("#result-more-button").click();
     await page.locator("#result-metadata").click();
+    await page.locator(".result-calculation summary").click();
     assert.match(await page.locator(".result-metadata").innerText(), /by_key/);
+    assert.equal(await page.locator(".result-metadata").getAttribute("contenteditable"), null);
+    await page.locator("#result-description").fill("Comparison notes");
+    await page.locator("#result-tags").fill("reviewed\nmatched");
+    await page.locator("#add-result-attribute").click();
+    await page.getByLabel("Attribute name").fill("Batch");
+    await page.getByLabel("Attribute value").fill("A");
+    await page.locator("#apply-result-annotations").click();
+    await page.waitForSelector('#result-dialog', { state: "hidden" });
+    assert.equal(await page.locator(".result-heading small").innerText(), "Modified");
+    await page.locator("#result-more-button").click();
+    await page.locator("#result-metadata").click();
+    assert.equal(await page.locator("#result-description").inputValue(), "Comparison notes");
+    assert.equal(await page.getByLabel("Attribute value").inputValue(), "A");
     await page.keyboard.press("Escape");
     await page.locator("#result-more-button").click();
     await page.locator("#result-load-options").click();
     await page.locator("#result-page-size").fill("1");
     await page.locator('#result-dialog button[type="submit"]').click();
     await page.waitForFunction(() => document.querySelector("footer").textContent.includes("Page 1 / 3"));
+    assert.equal(await page.locator(".result-heading small").count(), 0);
 
     if (!(await page.locator("#add-result-filter").isVisible())) await page.locator("#filter").click();
     await page.locator("#add-result-filter").click();
@@ -384,6 +418,11 @@ async function browserTests() {
     assert.equal(fs.readFileSync(path.join(temporary, "result.csv"), "utf8").replace(/\r\n/g, "\n"),
       'Reference.SpecID,Reference.Peak\nB,"100,1"\n');
     await page.setViewportSize({ width: 500, height: 800 });
+    await page.locator("#result-more-button").click();
+    const menuBounds = await page.locator("#result-more-actions").boundingBox();
+    assert.ok(menuBounds.x >= 0 && menuBounds.x + menuBounds.width <= 500);
+    await page.keyboard.press("Escape");
+    assert.equal(await page.locator("#result-more-actions").isVisible(), false);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
     assert.deepEqual(errors, []);
   } finally {

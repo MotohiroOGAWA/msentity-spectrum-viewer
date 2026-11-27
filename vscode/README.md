@@ -1,4 +1,4 @@
-<h1><img src="media/icon.png" alt="msentity icon" width="48" height="48" align="center"> msentity Spectrum Viewer for VS Code</h1>
+# msentity Spectrum Viewer for VS Code
 
 Graphical viewer for mass-spectrometry datasets — MSDS, MSP, MGF, TSV, and
 CSV — and for spectrum similarity results (`.mssim`). Data is read by
@@ -224,7 +224,10 @@ The `.mssim` file opens in a dedicated **Similarity Viewer**:
 - **Filter** combines score bounds with numeric and text comparisons. Choose
   a result column or, when spectra are embedded, a column from **Query** or
   **Reference**. All conditions must match.
-- Click a column heading to sort rows. Open **More → Columns** to show, hide,
+- Click a column heading to cycle through text ascending, text descending,
+  and unsorted. Right-click a heading for text or numeric sorting in either
+  direction. Adding another column sorts ties using the indicated priority.
+  Open **More → Columns** to show, hide,
   or move columns in **Comparison results**. **Reset columns** restores the configured
   score order and puts the source indices at the end. Use **Previous** and
   **Next** to change pages.
@@ -269,8 +272,11 @@ The `.mssim` file opens in a dedicated **Similarity Viewer**:
   the result table.
 - **Reload** rereads the saved result with the current view settings. Use
   **More → Loading options and reload** to change rows per page before reloading.
-- **More → Metadata** opens calculation parameters, input information, and row
-  counts. **More → Settings** opens the VS Code settings for similarity.
+- **More → Metadata** lets you edit the result's description, tags, and
+  attributes. Source details, calculation parameters, and row counts are
+  available in the read-only **Calculation metadata** section. Apply changes
+  to the open result, then export as MSSIM to save the annotations.
+  **More → Settings** opens the VS Code settings for similarity.
 
 The result opens independently of the source files. The file format is
 specified in msentity-similarity's

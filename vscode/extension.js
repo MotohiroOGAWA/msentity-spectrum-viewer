@@ -188,7 +188,6 @@ class MSEntityDocument {
 class MSEntityViewerProvider {
   constructor(context) {
     this.context = context;
-    this.iconPath = vscode.Uri.joinPath(context.extensionUri, "media", "editor-icon.png");
     this.spectrumPanels = new Map();
     this.forcedFileTypes = new Map();
     this.forcedLoadOptions = new Map();
@@ -204,11 +203,12 @@ class MSEntityViewerProvider {
   }
 
   async resolveCustomEditor(document, webviewPanel) {
-    webviewPanel.iconPath = this.iconPath;
+    const isSimilarity = path.extname(document.uri.fsPath).toLowerCase() === ".mssim";
+    webviewPanel.iconPath = vscode.Uri.joinPath(this.context.extensionUri, "media",
+      isSimilarity ? "similarity-file-icon.png" : "dataset-file-icon.png");
     const webview = webviewPanel.webview;
     const uiDir = resourceDir(this.context, "ui");
     webview.options = { enableScripts: true, localResourceRoots: [vscode.Uri.file(uiDir)] };
-    const isSimilarity = path.extname(document.uri.fsPath).toLowerCase() === ".mssim";
     webview.html = getDatasetWebviewHtml(webview, uiDir, document.uri, isSimilarity);
 
     const pageSize = configuredPageSize();
@@ -507,6 +507,10 @@ class MSEntityViewerProvider {
           } catch (error) { send({ type: "error", message: error.message || String(error) }); }
           break;
         }
+        case "set-similarity-annotations":
+          if (isSimilarity) writeRequest({ type: "set-annotations", description: message.description,
+            tags: message.tags, attributes: message.attributes });
+          break;
         case "open-similarity-match":
           writeRequest({ type: "match", row: Number(message.resultIndex), score: message.score });
           break;
@@ -714,7 +718,6 @@ class MSEntityViewerProvider {
           localResourceRoots: [vscode.Uri.file(resourceDir(this.context, "ui"))]
         }
       );
-      panel.iconPath = this.iconPath;
       panel.webview.html = getSpectrumWebviewHtml(panel.webview, resourceDir(this.context, "ui"));
       entry = { panel, ready: false, latest: payload, comparisonBottom, comparisonMethod };
       this.spectrumPanels.set(key, entry);
@@ -818,7 +821,6 @@ class MSEntityViewerProvider {
       "msentity.valueCounts", `Value counts · ${result.column}`, vscode.ViewColumn.Active,
       { enableScripts: true, localResourceRoots: [vscode.Uri.file(uiDir)] }
     );
-    panel.iconPath = this.iconPath;
     const settings = () => {
       const config = vscode.workspace.getConfiguration("msentitySpectrumViewer", documentUri);
       return { mode: config.get("valueCountsViewMode", "scroll"), pageSize: config.get("valueCountsPageSize", 100) };

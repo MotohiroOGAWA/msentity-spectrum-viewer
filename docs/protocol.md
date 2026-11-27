@@ -177,10 +177,11 @@ over `SIMILARITY_DEFAULTS` and validates them.
 
 | request | fields | answer |
 |---|---|---|
-| `page` (UI: `page-request`) | `page`, `filters`, `sort` {`column`, `direction`}, `bins` (1–200), optional `page_size` (1–500), `score` (the score column of the histogram and statistics; default the first) | `similarity-page` |
+| `page` (UI: `page-request`) | `page`, `filters`, `sort` (one key or a priority-ordered array of {`column`, `direction`, `mode`}; mode `text`, `numeric`, or omitted for native order), `bins` (1–200), optional `page_size` (1–500), `score` (the score column of the histogram and statistics; default the first) | `similarity-page` |
 | `reload` | as `page` | rereads the file, then `similarity-page` |
 | `coverage` (UI: `coverage-request`) | `filters`, `score` (y axis; default the first score column), `side` (1 or 2), `x_bins`, `y_bins` (1–500, default 20 / `x_bins`), `x_range`, `y_range` ([min, max], default [0, 1]), `max_points` (default 20000), `request_id` (echoed) | `similarity-coverage` |
 | `match` (UI: `open-similarity-match` {`resultIndex`, `score`}) | `row`, `score` | `similarity-match` {`query`, `reference`, `method` (the score column, as the comparison's initial method)} |
+| `set-annotations` (UI: `set-similarity-annotations`) | `description` (text), `tags` (text array), `attributes` (object of text values) | `similarity-annotations-updated` {`metadata` or `error`} |
 | `export` | `path` (`.mssim`, `.parquet`, `.csv`, `.tsv`), `filters`, `sort`; TSV/CSV also accept `columns` and `peak_sides` (array of 1 for query, 2 for reference) | `export-complete` {`path`, `total_rows`} |
 
 Errors answer `error` {`message`}. Filters here use the same operators except

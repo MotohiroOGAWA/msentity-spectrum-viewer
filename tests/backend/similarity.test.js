@@ -142,6 +142,39 @@ test("filters distinguish query and reference metadata and export selected spect
   }
 });
 
+test("similarity annotations are editable and exported without changing calculation metadata", { skip }, () => {
+  const tmp = tempDir();
+  try {
+    const query = tmp.file("query.tsv", "SpecID\tPeak\n1\t100,1\n");
+    const reference = tmp.file("reference.tsv", "SpecID\tPeak\n1\t100,1\n");
+    const result = tmp.file("original.mssim");
+    const exported = tmp.file("annotated.mssim");
+    runBackend("dataset", query, [
+      { type: "add-dataset", path: reference },
+      { type: "calculate-similarity", dataset1: query, dataset2: reference, path: result },
+    ]);
+    const messages = resultPage(result, [
+      { type: "page" },
+      { type: "set-annotations", description: "Review", tags: ["reviewed", "reviewed"], attributes: { Batch: "A" },
+        parameters: { methods: ["entropy"] } },
+      { type: "export", path: exported },
+      { type: "reload" },
+    ]);
+    assert.deepEqual(ofType(messages, "error"), []);
+    const [original, reloaded] = ofType(messages, "similarity-page").map(({ value }) => value.metadata);
+    const updated = ofType(messages, "similarity-annotations-updated")[0].metadata;
+    assert.deepEqual(updated.parameters, original.parameters);
+    assert.deepEqual(updated.sources, original.sources);
+    assert.deepEqual(updated.annotations, { description: "Review", tags: ["reviewed"], attributes: { Batch: "A" } });
+    assert.deepEqual(reloaded, original);
+    const saved = ofType(resultPage(exported, [{ type: "page" }]), "similarity-page")[0].value.metadata;
+    assert.deepEqual(saved.annotations, updated.annotations);
+    assert.deepEqual(saved.parameters, original.parameters);
+  } finally {
+    tmp.cleanup();
+  }
+});
+
 test("key matching, result filters, histogram, and export", { skip }, () => {
   const tmp = tempDir();
   try {

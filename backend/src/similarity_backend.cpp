@@ -129,6 +129,8 @@ class SimilarityBackend {
           json payload = match(request.at("row").get<int64_t>(), request.value("score", json("")));
           payload["type"] = "similarity-match";
           emit(payload);
+        } else if (kind == "set-annotations") {
+          update_annotations(request);
         } else if (kind == "export") {
           int64_t count = export_result(request);
           emit({{"type", "export-complete"}, {"path", request.at("path")}, {"total_rows", count}});
@@ -148,21 +150,51 @@ class SimilarityBackend {
   int page_size_;
   std::optional<sim::SimilarityDataset> result_;
   json metadata_;
+  bool metadata_modified_ = false;
 
   void load() {
     result_ = sim::SimilarityDataset::load(path_);
     metadata_ = json::parse(result_->metadata_json());
+    metadata_modified_ = false;
+  }
+
+  void update_annotations(const json& request) {
+    try {
+      const auto& attributes = request.at("attributes");
+      if (!attributes.is_object()) throw std::invalid_argument("Attributes must be an object");
+      msentity::Attributes pairs;
+      for (const auto& [name, value] : attributes.items()) pairs.emplace_back(name, value.get<std::string>());
+      result_->set_annotations(request.at("description").get<std::string>(),
+                               request.at("tags").get<std::vector<std::string>>(), std::move(pairs));
+      metadata_ = json::parse(result_->metadata_json());
+      metadata_modified_ = true;
+      emit({{"type", "similarity-annotations-updated"}, {"metadata", metadata_}});
+    } catch (const std::exception& error) {
+      emit({{"type", "similarity-annotations-updated"}, {"error", error.what()}});
+    }
   }
 
   std::vector<int64_t> rows(const json& request) const {
     const auto& result = *result_;
     auto filter = similarity_filter_group(request.value("filters", json::array()));
-    const auto sort = request.value("sort", json());
-    if (sort.is_object() && sort.contains("column")) {
-      return result.row_positions(filter, {json_text(sort["column"])},
-                                  {json_text(sort.value("direction", json("asc"))) != "desc"});
+    auto sort = request.value("sort", json());
+    if (sort.is_object()) sort = json::array({sort});
+    std::vector<std::string> columns;
+    std::vector<bool> ascending;
+    std::vector<sim::SortMode> modes;
+    if (sort.is_array()) {
+      for (const auto& item : sort) {
+        if (!item.is_object() || !item.contains("column")) continue;
+        auto column = json_text(item["column"]);
+        if (std::find(columns.begin(), columns.end(), column) != columns.end()) continue;
+        columns.push_back(std::move(column));
+        ascending.push_back(json_text(item.value("direction", json("asc"))) != "desc");
+        const auto mode = json_text(item.value("mode", json("")));
+        modes.push_back(mode == "text" ? sim::SortMode::Text
+                       : mode == "numeric" ? sim::SortMode::Numeric : sim::SortMode::Native);
+      }
     }
-    return result.row_positions(filter);
+    return result.row_positions(filter, columns, ascending, modes);
   }
 
   // The score column of a request ("score"; default the first score column).
@@ -241,6 +273,7 @@ class SimilarityBackend {
             {"total_rows", total},
             {"unfiltered_rows", result.size()},
             {"metadata", metadata_},
+            {"metadata_modified", metadata_modified_},
             {"has_matched_data", result.has_matched_data()},
             {"matched_data_rows", matched_rows},
             {"score_columns", result.score_columns()},
