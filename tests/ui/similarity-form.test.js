@@ -41,6 +41,11 @@ try { ({ chromium } = require('playwright')); } catch { chromium = null; }
     assert.equal(await page.locator('#similarity-tolerance-unit').inputValue(), 'Da or ppm');
     assert.equal(await page.locator('#similarity-tolerance-da').inputValue(), '0.02');
     assert.equal(await page.locator('#similarity-tolerance-ppm').inputValue(), '5');
+    assert.equal(await page.locator('#similarity-match-precursor').isChecked(), true);
+    assert.equal(await page.locator('#similarity-precursor').inputValue(), '');
+    assert.match(await preview(), /Only pairs with exactly equal precursor m\/z/);
+    assert.doesNotMatch(await preview(), /600,000 pairs/);
+    await page.locator('#similarity-match-precursor').uncheck();
     assert.match(await preview(), /120 query spectra .*× 5,000 reference spectra .*= 600,000 pairs/);
     assert.match(await preview(), /m\/z 0\.02 Da or 5 ppm/);
     await page.locator('#similarity-tolerance-da').fill('');
@@ -88,13 +93,14 @@ try { ({ chromium } = require('playwright')); } catch { chromium = null; }
     assert.deepEqual(JSON.parse(JSON.stringify(await last())), { type: 'similarity-submit', mode: 'library_search', dataset1: 'query',
       reference_path: '/data/ref/massbank.msp', parameters: { methods: ['reverse_cosine', 'bonanza'],
         precursor_column: 'PEPMASS', mz_tolerance: '10ppm',
-        intensity_exponent: 1, include_matched_data: false, threads: 2, threshold: 0.6 } });
+        intensity_exponent: 1, include_matched_data: false, threads: 2, threshold: 0.6, match_precursor_mz: false } });
     assert.equal(await page.locator('#submit-similarity-form').isDisabled(), true);
 
     // A cancelled save dialog or a host error keeps the form and its choices.
     await send({ type: 'similarity-save-cancelled' });
     assert.equal(await page.locator('#submit-similarity-form').isDisabled(), false);
     await page.locator('input[value="by_key"]').check();
+    assert.equal(await page.locator('#similarity-match-precursor').count(), 0);
     assert.equal(await page.locator('#similarity-dataset2').inputValue(), 'library');
     assert.equal(await page.locator('#similarity-key1').inputValue(), 'SpecID');
     assert.equal(await page.locator('#similarity-key2').inputValue(), 'InChIKey');
@@ -108,12 +114,23 @@ try { ({ chromium } = require('playwright')); } catch { chromium = null; }
     await send({ type: 'similarity-form-error', message: 'Use the .mssim extension.' });
     assert.equal(await problem(), 'Use the .mssim extension.');
 
-    // similarity-start closes the form and shows the calculation.
+    // Progress stays visible at the lower left while the More menu is closed.
     await send({ type: 'similarity-start' });
     assert.equal(await page.locator('#similarity-backdrop').count(), 0);
+    assert.equal(await page.locator('#more-actions-menu').isVisible(), false);
+    const progress = page.locator('.pagination #similarity-progress');
+    assert.equal(await progress.isVisible(), true);
+    assert.equal(await progress.innerText(), 'Calculating similarity…');
+    await send({ type: 'similarity-progress', percent: 42.5 });
+    assert.equal(await progress.innerText(), 'Calculating similarity… 42.5%');
     await page.locator('#more-actions-button').click();
-    assert.match(await page.locator('#similarity-button').innerText(), /Calculating/);
+    assert.equal(await page.locator('#similarity-button').innerText(), 'Calculating similarity… 42.5%');
+    await send({ type: 'similarity-complete' });
+    assert.equal(await progress.isVisible(), false);
+    await send({ type: 'similarity-start' });
+    assert.equal(await progress.innerText(), 'Calculating similarity…');
     await send({ type: 'similarity-cancelled' });
+    assert.equal(await progress.isVisible(), false);
 
     // Escape closes the form without a request.
     await page.locator('#similarity-button').click();

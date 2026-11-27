@@ -156,7 +156,8 @@ display filter/sort views.
  "parameters": {"methods": ["cosine"],     // one or more of "cosine", "reverse_cosine",
                                            // "modified_cosine", "bonanza": one score column each
                                            // ("method": one name, as before, is also accepted)
-                "precursor_column": "",    // modified_cosine/bonanza: precursor m/z column;
+                "match_precursor_mz": true, // library_search: require equal precursor m/z; omitted by older hosts
+                "precursor_column": "",    // precursor filtering, modified cosine, and BONANZA;
                                            // "" detects PrecursorMZ, precursor_mz, PEPMASS, ParentMZ
                 "threshold": 0.8,           // library_search: kept when any method scores >= it
                 "key1": "SpecID", "key2": "SpecID",   // by_key

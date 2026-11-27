@@ -61,7 +61,7 @@ function configuredLoadOptions() {
 function configuredSimilaritySettings(host) {
   const config = vscode.workspace.getConfiguration("msentitySpectrumViewer.similarity");
   const names = {
-    methods: "methods", threshold: "threshold",
+    methods: "methods", threshold: "threshold", match_precursor_mz: "matchPrecursorMz",
     intensity_exponent: "intensityExponent",
     include_matched_data: "includeMatchedData", threads: "threads",
   };
@@ -313,7 +313,10 @@ class MSEntityViewerProvider {
       switch (message?.type) {
         case "webview-ready":
           webviewReady = true;
-          if (!isSimilarity) webview.postMessage({ type: "viewer-config", options: { behavior: {
+          if (isSimilarity) webview.postMessage({ type: "similarity-viewer-config",
+            scoreColumnOrder: vscode.workspace.getConfiguration("msentitySpectrumViewer.similarity", document.uri).get("scoreColumnOrder")
+          });
+          else webview.postMessage({ type: "viewer-config", options: { behavior: {
             copyLockedCells: vscode.workspace.getConfiguration("msentitySpectrumViewer").get("copyLockedCells", true) !== false,
             lockedCellCopyGesture: vscode.workspace.getConfiguration("msentitySpectrumViewer").get("lockedCellCopyGesture", "rightClick"),
             showCopyNotifications: vscode.workspace.getConfiguration("msentitySpectrumViewer").get("showCopyNotifications", true) !== false
@@ -654,6 +657,7 @@ class MSEntityViewerProvider {
       methods: chosen.methods ?? (chosen.method ? [chosen.method] : undefined),
       precursor_column: chosen.precursor_column ?? defaults.precursor_column,
       threshold: chosen.threshold, mz_tolerance: chosen.mz_tolerance,
+      match_precursor_mz: chosen.match_precursor_mz ?? defaults.match_precursor_mz,
       intensity_exponent: chosen.intensity_exponent, include_matched_data: chosen.include_matched_data,
       threads: chosen.threads ?? defaults.threads
     });
@@ -668,6 +672,7 @@ class MSEntityViewerProvider {
     };
     if (mode === "library_search") {
       parameters.threshold = settings.threshold;
+      parameters.match_precursor_mz = settings.match_precursor_mz;
     } else {
       for (const [index, dataset] of [first, second].entries()) {
         const key = chosen[`key${index + 1}`];

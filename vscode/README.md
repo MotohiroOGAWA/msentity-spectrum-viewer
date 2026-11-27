@@ -180,8 +180,11 @@ score rule, and what is saved — and updates as you edit; a problem with the
 choices is shown there and disables **Calculate and save…**, which then asks
 where to save the result as **`.mssim`**.
 
-A library search compares every spectrum in the query dataset with every
-spectrum in a reference library. The reference can be an entry already loaded
+Library search defaults to **Require matching precursor m/z**. Both spectra
+need the same positive precursor m/z to become a candidate pair. Use
+**Precursor m/z** to select a column or use automatic detection. The Da/ppm
+tolerances apply to fragment peaks. Clear the checkbox to compare all pairs.
+The reference can be an entry already loaded
 with **Add dataset…**, or an MSDS, MSP, MGF, TSV, or CSV file chosen with
 **File…** / **Browse…** for that calculation. Choose one or more methods —
 cosine, reverse cosine, modified cosine, BONANZA; the result has one score
@@ -219,7 +222,12 @@ The `.mssim` file opens in a dedicated **Similarity Viewer**:
 - Embedded results show **Open spectra** on each row to open the saved query
   and reference records as a mirrored spectrum comparison.
 - **Filter**: combine numeric comparisons and key/text conditions.
-- Click a column heading to sort; use Previous/Next for paging.
+- Click a column heading to sort rows. In **Comparison results**, use **Columns**
+  to show, hide, or move columns. **Reset columns** restores the configured
+  score order and puts the source indices at the end. Use **Previous** and
+  **Next** to change pages.
+- Set `msentitySpectrumViewer.similarity.scoreColumnOrder` to choose the
+  default order of score columns when opening a result.
 - The histogram and count/mean/Q1/median/Q3/min/max summarize all filtered rows,
   not just the current page. Choose 1–200 bins; click a bar or use the accessible
   frequency table to filter a similarity range. The final bin includes 1.0.

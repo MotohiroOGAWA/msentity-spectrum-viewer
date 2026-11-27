@@ -255,6 +255,21 @@
             ],
             "description": "Default methods of Calculate Similarity; the result has one score column per method. The precursor m/z of modified_cosine and bonanza is read from msentitySpectrumViewer.spectrumComparison.precursorColumn (or detected)."
           },
+          "msentitySpectrumViewer.similarity.scoreColumnOrder": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["cosine", "reverse_cosine", "modified_cosine", "bonanza", "entropy", "unweighted_entropy"]
+            },
+            "uniqueItems": true,
+            "default": ["cosine", "reverse_cosine", "modified_cosine", "bonanza", "entropy", "unweighted_entropy"],
+            "description": "Default score column order in the .mssim viewer. Available scores omitted from the list follow in file order."
+          },
+          "msentitySpectrumViewer.similarity.matchPrecursorMz": {
+            "type": "boolean",
+            "default": true,
+            "description": "By default, compare only query and reference spectra with exactly equal precursor m/z in Library search."
+          },
           "msentitySpectrumViewer.similarity.threshold": {
             "type": "number",
             "default": 0.8,

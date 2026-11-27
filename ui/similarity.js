@@ -30,6 +30,10 @@
   let draftRange = { ...range };
   let referenceIndex = typeof saved.referenceIndex === "string" ? saved.referenceIndex : "";
   let sort = saved.sort || null;
+  let scoreColumnOrder = [];
+  let columnOrder = Array.isArray(saved.columnOrder) ? saved.columnOrder : [];
+  let hiddenColumns = Array.isArray(saved.hiddenColumns) ? saved.hiddenColumns : ["data_index1", "data_index2"];
+  let columnsOpen = false;
   let bins = saved.bins || 20;
   let chartType = CHART_TYPES.some(([type]) => type === saved.chartType) ? saved.chartType : "histogram";
   let countScale = saved.countScale === "log" ? "log" : "linear";
@@ -62,11 +66,30 @@
     modified_cosine: "Modified cosine", bonanza: "BONANZA",
     entropy: "Weighted entropy", unweighted_entropy: "Unweighted entropy" };
   const scoreLabel = (name) => SCORE_LABELS[name] || name;
+  function orderColumns(preferred, available) {
+    return [...new Set([...preferred.filter((name) => available.includes(name)), ...available])];
+  }
+  const scoreColumns = () => orderColumns(scoreColumnOrder, value?.score_columns || []);
+  const isIndex = (name) => /^(data_)?index[12]$/.test(name);
+  function comparisonColumns() {
+    const columns = value?.columns || [];
+    const scores = scoreColumns();
+    const defaults = [
+      ...columns.filter((name) => !isIndex(name) && !scores.includes(name)),
+      ...columns.filter(isIndex),
+    ];
+    const firstScore = columns.findIndex((name) => scores.includes(name));
+    if (firstScore >= 0) {
+      const precedingColumns = columns.slice(0, firstScore).filter((name) => !isIndex(name));
+      defaults.splice(precedingColumns.length, 0, ...scores);
+    }
+    return orderColumns(columnOrder, defaults);
+  }
   // The score column shown (statistics, distribution, filter, coverage plot):
   // the chosen one when the result has it, else the result's first.
   let score = typeof saved.score === "string" ? saved.score : "";
   const activeScore = () => value?.score_columns?.includes(score) ? score
-    : value?.score_columns?.[0] || score || "cosine";
+    : scoreColumns()[0] || score || "cosine";
   // One filter set for the table, plots, and export.
   const resultFilters = (includeScore = true) => [
     referenceIndex !== "" ? { column: "index2", operator: "numeric_eq", value: referenceIndex } : null,
@@ -79,7 +102,7 @@
   ].filter(Boolean).join(", ");
 
   function saveState() {
-    vscode.setState({ range, referenceIndex, sort, bins, chartType, countScale, image, view, coverage, score });
+    vscode.setState({ range, referenceIndex, sort, bins, chartType, countScale, image, view, coverage, score, columnOrder, hiddenColumns });
   }
 
   let coverageFilters = null;   // the filters of the cached coverage answers
@@ -117,14 +140,11 @@
     const sourceName = (side) => String(value?.metadata?.sources?.[side]?.path || "").split(/[\\/]/).pop()
       || (side ? "second dataset" : "first dataset");
     const subtitle = mode === "library_search"
-      ? `${method} library search · all query/reference pairs · threshold ${number(parameters.threshold)}${matching}`
+      ? `${method} library search · ${parameters.match_precursor_mz ? "equal precursor m/z pairs" : "all query/reference pairs"} · threshold ${number(parameters.threshold)}${matching}`
       : `${method} for unique metadata keys shared by both datasets${keyMatch ? ` · ${keyMatch}` : ""}${matching}`;
     const columnLabel = (column) => sharedKey && column === sharedKey ? keyMatch : column;
-    // data_index* are rows of the embedded spectra; index* identify a pair only
-    // when no key column does (library search).
-    const keyed = Boolean(parameters.key1 && value?.columns.includes(parameters.key1));
-    const columns = (value?.columns || []).filter((column) =>
-      !/^data_index[12]$/.test(column) && !(keyed && /^index[12]$/.test(column)));
+    const availableColumns = comparisonColumns();
+    const columns = availableColumns.filter((name) => !hiddenColumns.includes(name));
     const filterText = rangeLabelText(range);
     const referenceScope = referenceIndex === "" ? "" : ` · Reference index ${esc(referenceIndex)}`;
     const chartTypes = CHART_TYPES.filter(([type]) => type !== "methods" || (value?.score_columns?.length || 0) > 1);
@@ -136,7 +156,7 @@
     app.innerHTML = `
       <header><div><span class="eyebrow">MSENTITY · SIMILARITY</span><h1>${esc(app.dataset.filename)}</h1>
         <p>${esc(subtitle)}</p>${sharedKey ? `<p class="key-sides">a: ${esc(sourceName(0))} · b: ${esc(sourceName(1))}</p>` : ""}</div>
-        <nav aria-label="Result actions">${value ? `<label>Score <select id="score-column" ${disabled}>${value.score_columns.map((name) => option(name, scoreLabel(name), name === activeScore())).join("")}</select></label>` : ""}
+        <nav aria-label="Result actions">${value ? `<label>Score <select id="score-column" ${disabled}>${scoreColumns().map((name) => option(name, scoreLabel(name), name === activeScore())).join("")}</select></label>` : ""}
         <button id="filter" ${disabled}>Filter${filterText ? ` (${esc(scoreLabel(activeScore()))} ${esc(filterText)})` : ""}</button>
         <button id="export" ${disabled || !value ? "disabled" : ""}>Export…</button>
         <button id="reload" ${disabled}>Reload</button></nav></header>
@@ -177,14 +197,45 @@
           ${showCoverage ? "" : methodsChart ? methodTables() : `<details><summary>Frequency table</summary><div class="frequency-table"><table><thead><tr><th>Similarity range</th><th>Count</th></tr></thead>
           <tbody>${value.histogram.counts.map((count, i) => `<tr><td>${rangeLabel(i)}</td><td>${number(count)}</td></tr>`).join("")}</tbody></table></div></details>`}
         </section>
-        <section><div class="section-title"><h2>Comparison results</h2>${columns.some((column) => /^index[12]$/.test(column)) ? "<span>Indices are zero-based input positions</span>" : ""}</div>
-        <div class="table-scroll"><table><thead><tr>${value.has_matched_data ? "<th>Match</th>" : ""}${columns.map((column) => `<th aria-sort="${sort?.column === column ? (sort.direction === "asc" ? "ascending" : "descending") : "none"}"><button data-sort="${esc(column)}" ${disabled}>${esc(columnLabel(column))} ${sort?.column === column ? (sort.direction === "asc" ? "↑" : "↓") : "↕"}</button></th>`).join("")}</tr></thead>
+        <section><div class="section-title"><h2>Comparison results</h2><button id="result-columns-button" aria-expanded="${columnsOpen}" aria-controls="result-columns" ${disabled}>Columns</button></div>
+        ${columnsOpen ? `<div id="result-columns" class="result-columns" aria-label="Result columns">
+          <div class="actions"><button data-column-action="show">Show all</button><button data-column-action="hide">Hide all</button><button data-column-action="reset">Reset columns</button></div>
+          <ul>${availableColumns.map((name, index) => `<li><label><input type="checkbox" data-result-column="${esc(name)}" ${hiddenColumns.includes(name) ? "" : "checked"}> ${esc(columnLabel(name))}</label>
+            <button data-move-column="${esc(name)}" data-offset="-1" aria-label="Move ${esc(columnLabel(name))} left" ${index === 0 ? "disabled" : ""}>↑</button>
+            <button data-move-column="${esc(name)}" data-offset="1" aria-label="Move ${esc(columnLabel(name))} right" ${index === availableColumns.length - 1 ? "disabled" : ""}>↓</button></li>`).join("")}</ul>
+        </div>` : ""}
+        ${columns.some((column) => /^index[12]$/.test(column)) ? '<p class="index-note">index1 and index2 are zero-based input positions.</p>' : ""}
+        ${columns.length || value.has_matched_data ? "" : '<p>No columns selected.</p>'}
+        <div class="table-scroll" ${columns.length || value.has_matched_data ? "" : "hidden"}><table><thead><tr>${value.has_matched_data ? "<th>Match</th>" : ""}${columns.map((column) => `<th aria-sort="${sort?.column === column ? (sort.direction === "asc" ? "ascending" : "descending") : "none"}"><button data-sort="${esc(column)}" ${disabled}>${esc(columnLabel(column))} ${sort?.column === column ? (sort.direction === "asc" ? "↑" : "↓") : "↕"}</button></th>`).join("")}</tr></thead>
         <tbody>${value.rows.length ? value.rows.map((row, index) => `<tr>${value.has_matched_data ? `<td><button data-open-match="${Number(value.result_indices[index])}" ${disabled}>Open spectra</button></td>` : ""}${columns.map((column) => `<td>${(value.score_columns.includes(column) || /^(modified_)?peak_intensity_coverage[12]$/.test(column)) ? number(row[column]) : esc(typeof row[column] === "object" && row[column] !== null ? JSON.stringify(row[column]) : row[column])}</td>`).join("")}</tr>`).join("") : `<tr><td colspan="${columns.length + (value.has_matched_data ? 1 : 0)}" class="empty">No matching rows</td></tr>`}</tbody></table></div>
         <footer><button id="previous" ${busy || value.page === 0 ? "disabled" : ""}>Previous</button><span>Page ${value.page + 1} / ${value.total_pages}</span><button id="next" ${busy || value.page + 1 >= value.total_pages ? "disabled" : ""}>Next</button></footer></section>
         <details class="metadata"><summary>Calculation metadata</summary><p>Reload reads the saved result. Recalculate from the dataset viewer to use changed spectra.</p><pre>${esc(JSON.stringify(value.metadata, null, 2))}</pre></details>
       ` : "<p>Opening similarity results…</p>"}
       ${exportOpen && value ? (showCoverage ? coverageImageDialog() : imageDialog()) : ""}`;
 
+    document.getElementById("result-columns-button")?.addEventListener("click", () => {
+      columnsOpen = !columnsOpen;
+      render();
+      document.getElementById("result-columns-button")?.focus();
+    });
+    document.querySelectorAll("[data-result-column]").forEach((input) => input.addEventListener("change", () => {
+      const name = input.dataset.resultColumn;
+      hiddenColumns = input.checked ? hiddenColumns.filter((column) => column !== name) : [...hiddenColumns, name];
+      updateColumns(input, "resultColumn");
+    }));
+    document.querySelectorAll("[data-move-column]").forEach((button) => button.addEventListener("click", () => {
+      const index = availableColumns.indexOf(button.dataset.moveColumn);
+      const target = index + Number(button.dataset.offset);
+      [availableColumns[index], availableColumns[target]] = [availableColumns[target], availableColumns[index]];
+      columnOrder = availableColumns;
+      updateColumns(button, "moveColumn");
+    }));
+    document.querySelectorAll("[data-column-action]").forEach((button) => button.addEventListener("click", () => {
+      const action = button.dataset.columnAction;
+      hiddenColumns = action === "hide" ? availableColumns : action === "reset" ? ["data_index1", "data_index2"] : [];
+      if (action === "reset") columnOrder = [];
+      updateColumns(button, "columnAction");
+    }));
     document.getElementById("score-column")?.addEventListener("change", (e) => { score = e.target.value; request("page-request", value.page); });
     document.getElementById("filter")?.addEventListener("click", () => { showFilters = !showFilters; draftRange = { ...range }; render(); });
     document.getElementById("reload")?.addEventListener("click", () => request("reload"));
@@ -251,6 +302,14 @@
     else document.body.classList.remove("modal-open");
   }
 
+  function updateColumns(control, key) {
+    saveState();
+    render();
+    const controls = [...document.querySelectorAll("#result-columns input, #result-columns button")];
+    const matches = controls.filter((item) => item.dataset[key] === control.dataset[key] && !item.disabled);
+    (matches.find((item) => item.dataset.offset === control.dataset.offset) || matches[0])?.focus();
+  }
+
   function applyRange() {
     const bound = (text) => text === "" ? "" : Number(text);
     const min = bound(draftRange.min), max = bound(draftRange.max);
@@ -264,7 +323,9 @@
   // [score column, counts] of every method (one series for results without histograms).
   function scoreSeries() {
     const histograms = value?.histograms;
-    return histograms && Object.keys(histograms).length ? Object.entries(histograms) : [[activeScore(), value.histogram.counts]];
+    return histograms && Object.keys(histograms).length
+      ? orderColumns(scoreColumns(), Object.keys(histograms)).map((name) => [name, histograms[name]])
+      : [[activeScore(), value.histogram.counts]];
   }
   // Statistics and frequency of every method, under the "All methods" plot.
   function methodTables() {
@@ -936,7 +997,12 @@
   }
 
   window.addEventListener("message", ({ data: message }) => {
-    if (message.type === "backend-ready") request();
+    if (message.type === "similarity-viewer-config") {
+      const previous = activeScore();
+      scoreColumnOrder = Array.isArray(message.scoreColumnOrder) ? message.scoreColumnOrder : [];
+      if (value && activeScore() !== previous) request("page-request", value.page);
+      else if (value) render();
+    } else if (message.type === "backend-ready") request();
     else if (message.type === "similarity-page") {
       value = message.value; busy = false; error = "";
       // A host without score_columns: the score columns among the table's.

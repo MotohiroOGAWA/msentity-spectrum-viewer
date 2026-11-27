@@ -102,6 +102,9 @@ button:disabled { cursor: default; opacity: .5; }
 .empty { text-align: center; color: var(--muted); padding: 38px !important; }
 .pagination { position: relative; flex: 0 0 auto; z-index: 4; display: grid; grid-template-columns: 1fr auto 1fr; gap: 10px; align-items: center; padding: 9px 14px; background: var(--panel); border-top: 1px solid var(--border); color: var(--muted); font-size: 12px; }
 .pagination > :last-child { text-align: right; }
+.pagination-summary { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 12px; }
+.similarity-progress { color: var(--text); }
+.similarity-progress:empty { display: none; }
 .page-controls { display: flex; align-items: center; gap: 7px; }
 .page-controls button { width: 30px; height: 28px; padding: 0; font-size: 18px; }
 .page-controls input { width: 54px; padding: 5px; text-align: center; }

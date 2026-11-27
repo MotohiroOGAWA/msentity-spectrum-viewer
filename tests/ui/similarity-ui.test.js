@@ -57,7 +57,7 @@ async function wizardTests() {
   // "method" (one name) is still accepted; the backend gets "methods".
   assert.deepEqual(JSON.parse(JSON.stringify(requests[0].parameters)), { methods: ["reverse_cosine"],
     precursor_column: "", threads: 1, mz_tolerance: "10ppm", intensity_exponent: 0.5,
-    include_matched_data: false, threshold: 0.6 });
+    include_matched_data: false, threshold: 0.6, match_precursor_mz: true });
   await submit({ ...library, parameters: { ...library.parameters, method: undefined,
     methods: ["bonanza", "cosine"], precursor_column: "PEPMASS" } });
   assert.deepEqual([...requests[0].parameters.methods], ["cosine", "bonanza"]);
@@ -74,6 +74,7 @@ async function wizardTests() {
   assert.equal(requests[0].parameters.key1, "SpecID");
   assert.equal(requests[0].parameters.key2, "Name");
   assert.equal(requests[0].parameters.threshold, undefined);
+  assert.equal(requests[0].parameters.match_precursor_mz, undefined);
 
   // Invalid choices throw (the host answers similarity-form-error) and send nothing.
   for (const [form, pattern] of [
@@ -137,7 +138,7 @@ async function browserTests() {
       response.setHeader("Content-Type", "text/html");
       response.end(`<!doctype html><html><head><meta charset="UTF-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src blob:; style-src 'self'; script-src 'nonce-test';">
         <link rel="stylesheet" href="/theme.css"><link rel="stylesheet" href="/similarity.css"></head><body>
-        <div id="app" data-filename="sample.mssim"></div><script nonce="test">window.acquireVsCodeApi = () => ({ getState: () => null, setState: () => {}, postMessage: m => window.sendHostMessage(m) });</script>
+        <div id="app" data-filename="sample.mssim"></div><script nonce="test">window.acquireVsCodeApi = () => ({ getState: () => null, setState: state => { window.resultState = state; }, postMessage: m => window.sendHostMessage(m) });</script>
         <script nonce="test" src="/similarity.js"></script></body></html>`);
     } else if (request.url === "/theme.css") {
       response.setHeader("Content-Type", "text/css");
@@ -194,10 +195,10 @@ async function browserTests() {
     await page.locator("#filter").click();
     await page.locator("#clear").click();
     await page.waitForFunction(() => document.querySelector(".stats strong").textContent.startsWith("3"));
-    // The key column identifies the pairs of this by-key result: index* and data_index* are hidden.
+    // Source indices are last by default, including for a by-key result.
     assert.deepEqual(await page.locator("[data-sort]").evaluateAll((b) => b.map((e) => e.dataset.sort)),
       ["SpecID", "cosine", "modified_cosine", "peak_intensity_coverage1", "peak_intensity_coverage2",
-        "modified_peak_intensity_coverage1", "modified_peak_intensity_coverage2"]);
+        "modified_peak_intensity_coverage1", "modified_peak_intensity_coverage2", "index1", "index2"]);
     assert.deepEqual(await page.locator("#score-column option").allTextContents(), ["Cosine", "Modified cosine"]);
     assert.match(await page.locator('[data-sort="SpecID"]').innerText(), /^a\.SpecID = b\.SpecID/);
     await page.locator("#bins").fill("2"); await page.locator("#bins").press("Tab");
@@ -332,6 +333,23 @@ async function browserTests() {
     await page.locator("#reload").click();
     await page.waitForFunction(() => !document.querySelector("#reload").disabled);
     await page.screenshot({ path: path.join(os.tmpdir(), "msentity-similarity-ui.png"), fullPage: true });
+    await page.evaluate(() => window.dispatchEvent(new MessageEvent("message", {
+      data: { type: "similarity-viewer-config", scoreColumnOrder: ["modified_cosine", "entropy", "cosine"] },
+    })));
+    assert.deepEqual(await page.locator("#score-column option").allTextContents(), ["Modified cosine", "Cosine"]);
+    const columns = () => page.locator("[data-sort]").evaluateAll((buttons) => buttons.map((button) => button.dataset.sort));
+    assert.deepEqual((await columns()).slice(0, 3), ["SpecID", "modified_cosine", "cosine"]);
+    await page.locator("#result-columns-button").click();
+    await page.locator('[data-result-column="index1"]').uncheck();
+    assert.deepEqual((await columns()).slice(-1), ["index2"]);
+    await page.locator('[data-move-column="cosine"][data-offset="-1"]').click();
+    assert.deepEqual((await columns()).slice(0, 3), ["SpecID", "cosine", "modified_cosine"]);
+    const state = await page.evaluate(() => window.resultState);
+    assert.ok(state.hiddenColumns.includes("index1"));
+    assert.deepEqual(state.columnOrder.slice(0, 3), ["SpecID", "cosine", "modified_cosine"]);
+    await page.locator('#result-columns [data-column-action="reset"]').click();
+    assert.deepEqual((await columns()).slice(0, 3), ["SpecID", "modified_cosine", "cosine"]);
+    assert.deepEqual((await columns()).slice(-2), ["index1", "index2"]);
     await page.setViewportSize({ width: 500, height: 800 });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
     assert.deepEqual(errors, []);

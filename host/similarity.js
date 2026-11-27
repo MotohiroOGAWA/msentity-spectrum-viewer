@@ -7,7 +7,8 @@
 
 const SIMILARITY_DEFAULTS = Object.freeze({
   methods: Object.freeze(["cosine"]), // one or more of METHODS; one score column each
-  precursor_column: "",        // precursor m/z column (modified_cosine, bonanza); "" detects it
+  precursor_column: "",        // precursor m/z column; "" detects it
+  match_precursor_mz: true,    // library search: require equal precursor m/z
   threshold: 0.8,              // library search: lowest score kept, 0–1
   mz_tolerance: "0.01Da,10ppm", // peaks match within either term (see parseMzTolerance)
   intensity_exponent: 1,       // intensities are raised to this power (> 0)
@@ -96,8 +97,8 @@ function similaritySettings(overrides = {}) {
   }
   number("intensity_exponent", (v) => v > 0, "a number > 0");
   number("threads", (v) => Number.isSafeInteger(v) && v >= 1, "an integer >= 1");
-  if (typeof settings.include_matched_data !== "boolean") {
-    throw new Error("Similarity setting include_matched_data must be true or false");
+  for (const name of ["include_matched_data", "match_precursor_mz"]) {
+    if (typeof settings[name] !== "boolean") throw new Error(`Similarity setting ${name} must be true or false`);
   }
   return Object.freeze(settings);
 }

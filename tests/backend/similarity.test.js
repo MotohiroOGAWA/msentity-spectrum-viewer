@@ -51,6 +51,33 @@ test("library search with a loaded and a file reference", { skip }, () => {
   }
 });
 
+test("library search can filter candidates by exact precursor m/z", { skip }, () => {
+  const tmp = tempDir();
+  try {
+    const query = tmp.file("query.tsv", "Name\tPEPMASS\tPeak\nq0\t300 4000\t100,1\nq1\t301\t100,1\nq2\t\t100,1\n");
+    const reference = tmp.file("reference.tsv", "Name\tPrecursorMZ\tPeak\nr0\t300\t100,1\nr1\t300.001\t100,1\nr2\t300\t100,1\nr3\t\t100,1\n");
+    const filtered = tmp.file("filtered.mssim");
+    const all = tmp.file("all.mssim");
+    const messages = runBackend("dataset", query, [
+      { type: "calculate-similarity", mode: "library_search", dataset1: query, reference_path: reference,
+        path: filtered, parameters: { match_precursor_mz: true, methods: ["entropy"] } },
+      { type: "calculate-similarity", mode: "library_search", dataset1: query, reference_path: reference,
+        path: all, parameters: { match_precursor_mz: false } },
+    ]);
+    assert.deepEqual(ofType(messages, "similarity-error"), []);
+    assert.deepEqual(ofType(messages, "similarity-complete").map((result) => result.candidate_pairs), [2, 12]);
+    const progress = ofType(messages, "similarity-progress").filter((message) => message.percent === 100);
+    assert.deepEqual(progress.map(({ processed, total }) => [processed, total]), [[2, 2], [12, 12]]);
+
+    const pages = ofType(resultPage(filtered, [{ type: "page" }, { type: "page", page: 1 }]), "similarity-page");
+    assert.deepEqual(pages.map(({ value }) => [value.rows[0].index1, value.rows[0].index2]), [[0, 0], [0, 2]]);
+    assert.equal(pages[0].value.metadata.parameters.match_precursor_mz, true);
+    assert.equal(pages[0].value.metadata.candidate_pair_count, 2);
+  } finally {
+    tmp.cleanup();
+  }
+});
+
 test("entropy histograms use every matching row for the selected reference", { skip }, () => {
   const tmp = tempDir();
   try {

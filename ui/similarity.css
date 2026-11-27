@@ -43,6 +43,11 @@ body.modal-open { overflow: hidden; }
 .hint { min-height: 22px; font-variant-numeric: tabular-nums; }
 summary { cursor: pointer; font-weight: 500; }
 .table-scroll, .frequency-table { overflow: auto; }
+.result-columns { padding: 10px; margin: 8px 0; border: 1px solid var(--vscode-panel-border); }
+.result-columns ul { list-style: none; padding: 0; margin: 8px 0 0; max-height: 220px; overflow: auto; }
+.result-columns li { display: flex; align-items: center; gap: 4px; padding: 2px; }
+.result-columns label { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.index-note { margin: 4px 0; }
 .frequency-table { max-height: 240px; margin-top: 10px; }
 table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; text-align: left; }
 th, td { padding: 9px 12px; white-space: nowrap; border-bottom: 1px solid var(--vscode-panel-border); }
